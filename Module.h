@@ -1,3 +1,9 @@
+/*
+ *	Author:	Seung-Hee Bae (shbae@cs.washington.edu)
+ *	Date:	Dec. 2013
+ *	Copyright (C) 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
+ */
+
 #ifndef MODULE_H
 #define MODULE_H
 
@@ -33,12 +39,10 @@ class Module {
 
   public:
 	vector<Node *> members;	// member nodes in this module.
-	//vector<Node> members;	// member nodes in this module.
 
 	// Constructors and member functions
 	Module();
 	Module(int idx, double exitPr, double sumPr);
-	//Module(int idx, int nNode, Node nd)
 	Module(int idx, Node * nd);	// used for Node to Module transformation.
 
 	// Getter -- Setter
@@ -114,8 +118,6 @@ class Network {
 	//static const double beta = 1.0 - alpha;
 	static const double beta = 1.0 - 0.15;
 
-	//static MTRand *R;
-	//static MTRand R;
 	MTRand *R;
 
 	vector<Module> modules;
@@ -164,12 +166,6 @@ class Network {
 	int NDanglings() { return nDanglings; }
 	void setNDanglings(int nDangle) { nDanglings = nDangle; }
 
-	//double Alpha() { return alpha; }
-	//void setAlpha(double a) { alpha = a; }
-
-	//double Beta() { return beta; }
-	//void setBeta(double b) { beta = b; }
-
 	double AllLogAll() { return allNodes_log_allNodes; }
 	void setAllLogAll(double all) { allNodes_log_allNodes = all; }
 
@@ -198,7 +194,6 @@ class Network {
 	void updateCodeLength(int numTh, bool isSPNode);
 	void copyModule(Module * newM, Module * oldM);	// copy from oldM to newM.
 	void copyModule(int newM, int oldM);	// copy modules[oldM] to modules[newM].
-	void removeEmptyModules();
 };
 
 #endif
