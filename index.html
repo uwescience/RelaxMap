@@ -1,1 +1,266 @@
-This is under construction.
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!--
+Design by http://www.bluewebtemplates.com
+Released for free under a Creative Commons Attribution 3.0 License
+-->
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>RelaxMap</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<link href="style.css" rel="stylesheet" type="text/css" />
+<!-- CuFon: Enables smooth pretty custom font rendering. 100% SEO friendly. To disable, remove this section -->
+<script type="text/javascript" src="js/cufon-yui.js"></script>
+<script type="text/javascript" src="js/georgia.js"></script>
+<script type="text/javascript" src="js/cuf_run.js"></script>
+<!-- CuFon ends -->
+</head>
+<body>
+<div class="main">
+
+  <div class="header">
+    <div class="header_resize">
+      <div class="logo"><h1><a href="index.html">RelaxMap</a></h1></div>
+      <div class="menu_nav">
+        <ul>
+          <li class="active"><a href="index.html"><span>Home</span></a></li>
+          <li><a href="experiments.html"><span>Experiments</span></a></li>
+		  <li><a href="http://www.mapequation.org" target="_blank"><span>Map Equation</span></a></li>
+          <li><a href="http://db.cs.washington.edu" target="_blank"><span>UW DB Group</span></a></li>
+          <!--<li><a href="http://www.cs.washington.edu" target="_blank"><img src="images/uw_cse_banner.png" width="200px" /></a></li>-->
+        </ul>
+      </div>
+      <div class="clr"></div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="content_resize">
+      <div class="mainbar"><div class="submb">
+		<a name="intro"></a>
+        <div class="article">
+          <h2>Introduction</h2>
+          <p>Community-detection is a powerful approach to uncover
+		  important structures in large networks. Since networks often
+		  describe flow of some entity, flow-based community-detection
+		  methods are particularly interesting. One such algorithm is called
+		  Infomap, which optimizes the objective function known as the
+		  map equation. While Infomap is known to be an effective algorithm,
+		  its serial implementation cannot take advantage of multicore
+		  processing in modern computers.
+		  </p>
+		  <p>Thus, we propose a novel parallel generalization of Infomap called RelaxMap. 
+		  This algorithm relaxes concurrency assumptions to avoid lock overhead,
+		  achieving high parallel efficiency in shared-memory multicore
+		  experiments while exhibiting similar convergence properties and
+		  finding similar community structures as the serial algorithm.</p>
+		  <p>
+		  For the details of the RelaxMap algorithm, please refer to our paper appeared in the Proceedings of 2013 ICDM Workshops.
+		  </p>
+		</div>
+		<a name="publications"></a>
+		<div class="article">
+		  <h2>Publications</h2>
+		  <p>Seung-Hee Bae, Daniel Halperin, Jevin West, Martin Rosvall, Bill Howe,
+				"<a href="http://homes.cs.washington.edu/~shbae/papers/relaxMap_camera_ready.pdf" target="_blank"><b>Scalable Flow-Based Community Detection for Large-Scale Network Analysis</b></a>,"
+				in Proceedings of <em>IEEE International Conference on Data Mining Workshops (ICDMW 2013)</em>, Dallas, Texas, Dec. 2013. 
+		  </p>
+        </div>
+		<a name="dependency"></a>
+        <div class="article">
+          <h2>Dependency</h2>
+          <p>RelaxMap is implemented in C++ and uses OpenMP for shared-memory parallelism,
+		   so your C++ compiler should contain OpenMP library in order to compile and run in parallel.
+		  </p>
+		  <p>If your C++ compiler contains OpenMP library, you can compile this application by simple 'make' command.
+		  </p>
+        </div>
+		<a name="guide"></a>
+        <div class="article">
+          <h2>User Guide</h2>
+		  <h3>How to run RelaxMap</h3>
+          <p>
+			<code>
+			<b>[Usage]</b>: >./ompRelaxmap [seed] [network data] [# threads] [# attempts] [threshold] [maxIter] [outDir] [adapt/fixed]<br />
+			<br />
+			<b>example</b>: >./ompRelaxmap 1 data/flow.txt 4 1 1e-3 10 outputs/ fixed
+			</code>
+		  </p>
+
+		  <h3>The Required Arguments:</h3>
+		  <p>
+			<code>
+				args[0]: <i>seed</i> - random seed value for generating random sequential order of vertices for each iteration.<br />
+				args[1]: <i>network data</i> - the input graph data.<br />
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RelaxMap supports 1) pajek format (.net) and 2) edge list format (.txt).<br />
+									<!-- You can find an example of each format in the data/ directory.
+									You can also find more datasets from Stanford Network Analysis Project (SNAP) network data repository.
+									You should note that RelaxMap assumes the input graph is directed graph.<br /> -->
+				args[2]: <i># thread</i> - the number of threads<br />
+				args[3]: <i># attempts</i> - the number of attempts.<br />
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (this is not applied yet, so it only return with 1 attempt.)<br />
+				args[4]: <i>threshold</i> - the stop condition threshold  (recommended 1e-3 or 1e-4)<br />
+				args[5]: <i>maxIter</i> - the number of maximum iteration for each super-step.<br />
+				args[6]: <i>outDir</i> - the directory where the output files will be located.<br />
+				args[7]: <i>adapt/fixed flag</i> - use either <i>adapt</i> or <i>fixed</i> for threshold option.<br />
+			</code>
+		  </p>
+		  <h3>Output Files</h3>
+			<dl>
+				<li><b>.clu file</b>:<br />
+					This file will represent the assigned module (community) ID for each vertex in the ascending order of vertex ID.<br />
+					<br />
+					The .clu file looks like below: <br />
+					<code>
+					*Vertices 16<br />
+					1<br />
+					1<br />
+					1<br />
+					1<br />
+					7<br />
+					7<br />
+					7<br />
+					7<br />
+					12<br />
+					12<br />
+					12<br />
+					12<br />
+					13<br />
+					13<br />
+					13<br />
+					13<br />
+					</code>
+					example .clu file: <a href="outputs/flow.clu">flow.clu</a></li>
+					<br />
+				<li><b>.tree file</b>:<br />
+					This file will show members (vertices) of each module with the names of members and corresponding pageranks.
+					At first line, it will provide the MDL value of this mapping and the number of modules.<br />
+					<br />
+					The .tree file looks like below: <br />
+					<code>
+					# Code length 3.32773 in 4 modules.<br />
+					1:1 0.0820133 "1"<br />
+					1:2 0.0790863 "2"<br />
+					1:3 0.0429867 "3"<br />
+					1:4 0.0459137 "4"<br />
+					2:1 0.0820133 "5"<br />
+					2:2 0.0790863 "6"<br />
+					2:3 0.0429867 "7"<br />
+					2:4 0.0459137 "8"<br />
+					3:1 0.0820133 "9"<br />
+					3:2 0.0790863 "10"<br />
+					3:3 0.0429867 "11"<br />
+					3:4 0.0459137 "12"<br />
+					4:1 0.0820133 "13"<br />
+					4:2 0.0790863 "14"<br />
+					4:3 0.0429867 "15"<br />
+					4:4 0.0459137 "16"<br />
+					</code>
+					example .tree file: <a href="outputs/flow.tree">flow.tree</a></li>
+			</dl>
+        </div>
+		<a name="related"></a>
+        <div class="article">
+          <h2>Related Resources</h2>
+		  <table cellpadding="5px">
+			<tr><td><a href="http://www.mapequation.org" target="_blank">www.mapequation.org</a></td>
+				<td>
+				<p><b>The Map Equation</b> is the objective function for searching communities with respect to the network flows.
+					In this website, you can find a community detection algorithm, called <b>Infomap</b>, based on the map equation,
+					as well as various useful information related to the map equation and the Infomap.
+				</p>
+				</td>
+			</tr>
+			<tr><td><a href="http://snap.stanford.edu/data/" target="_blank">SNAP Network Data Collection</a></td>
+				<td>From this network data repository, you can find a bunch of realworld network datasets with various sizes.
+				</td>
+			</tr>
+		  </table>
+        </div>
+		<a name="contact"></a>
+        <div class="article">
+          <h2>Contact Us</h2>
+          <p>
+			If you have any question or comment with respect to RelaxMap project, please contact us one of the following members:
+		  </p>
+		  <table>
+			<tr><td><b>Seung-Hee Bae:</b></td><td><img src="images/sh_email.png" class="content" width="200px"></td></tr>
+			<tr><td><b>Bill Howe:</b></td><td><img src="images/bh_email.png" class="content" width="210px"></td></tr>
+		  </table>
+        </div>
+      </div></div>
+      <div class="sidebar">
+        <div class="gadget">
+          <h2 class="star">Menu</h2>
+          <ul class="sb_menu">
+            <li><a href="#intro">Introduction</a></li>
+            <li><a href="#publications">Publications</a></li>
+            <li><a href="#dependency">Dependency</a></li>
+            <li><a href="#guide">User Guide</a></li>
+            <li><a href="#related">Related</a></li>
+			<li><a href="experiments.html">Experiments</a></li>
+            <li><a href="#contact">Contact Us</a></li>
+          </ul>
+        </div>
+        <!-- <div class="gadget">
+          <h2 class="star">Sponsors</h2>
+          <ul class="ex_menu">
+            <li><a href="http://www.dreamtemplate.com" title="Website Templates">DreamTemplate</a><br />Over 6,000+ Premium Web Templates</li>
+            <li><a href="http://www.templatesold.com" title="WordPress Themes">TemplateSOLD</a><br />Premium WordPress &amp; Joomla Themes</li>
+            <li><a href="http://www.imhosted.com" title="Affordable Hosting">ImHosted.com</a><br />Affordable Web Hosting Provider</li>
+            <li><a href="http://www.dreamstock.com" title="Stock Photos">DreamStock</a><br />Download Amazing Stock Photos</li>
+            <li><a href="http://www.evrsoft.com" title="Website Builder">Evrsoft</a><br />Website Builder Software &amp; Tools</li>
+            <li><a href="http://www.myvectorstore.com" title="Stock Icons">MyVectorStore</a><br />Royalty Free Stock Icons</li>
+          </ul>
+        </div> -->
+      </div>
+      <div class="clr"></div>
+    </div>
+  </div>
+
+<!--
+  <div class="fbg">
+    <div class="fbg_resize">
+      <div class="col c1">
+        <h2>About</h2>
+        <img src="images/white.jpg" width="64" height="64" alt="pix" />
+        <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Donec libero. Suspendisse bibendum. Cras id urna. Morbi tincidunt, orci ac convallis aliquam, lectus turpis varius llorem, eu posuere nunc justo tempus leo. Donec mattis, purus nec placerat bibendum, dui pede condimentum odio, ac blandit ante orci ut diam. <a href="#">Learn more...</a></p>
+        <div class="clr"></div>
+      </div>
+      <div class="col c2">
+        <h2>Lorem Ipsum</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur dui nunc, molestie ut porta et, egestas vel justo. Suspendisse bibendum. Cras id urna. Morbi tincidunt, orci ac convallis aliquam, lectus turpis varius lorem, eu posuere nunc justo tempus leo.</p>
+        <ul class="sb_menu">
+          <li><a href="#">semper</a></li>
+          <li><a href="#">magna sed purus</a></li>
+          <li><a href="#">tincidunt</a></li>
+        </ul>
+      </div>
+      <div class="col c3">
+        <h2>Image Gallery</h2>
+        <a href="#" class="nobg"><img src="images/pix1.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix2.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix3.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix4.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix5.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix6.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+      </div>
+      <div class="clr"></div>
+    </div>
+  </div>
+-->
+  <div class="footer">
+    <div class="footer_resize">
+      <p class="lf">&copy; Copyright Seung-Hee Bae, Bill Howe, and UW CSE Database Group. Designed by Blue <a href="http://www.bluewebtemplates.com">Website Templates</a></p>
+   <!--   <ul class="fmenu">
+        <li class="active"><a href="index.html">Home</a></li>
+        <li><a href="support.html">Support</a></li>
+        <li><a href="blog.html">Blog</a></li>
+        <li><a href="about.html">About Us</a></li>
+        <li><a href="contact.html">Contacts</a></li>
+      </ul> -->
+      <div class="clr"></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

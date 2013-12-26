@@ -1,0 +1,159 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!--
+Design by http://www.bluewebtemplates.com
+Released for free under a Creative Commons Attribution 3.0 License
+-->
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>RelaxMap</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<link href="style.css" rel="stylesheet" type="text/css" />
+<!-- CuFon: Enables smooth pretty custom font rendering. 100% SEO friendly. To disable, remove this section -->
+<script type="text/javascript" src="js/cufon-yui.js"></script>
+<script type="text/javascript" src="js/georgia.js"></script>
+<script type="text/javascript" src="js/cuf_run.js"></script>
+<!-- CuFon ends -->
+</head>
+<body>
+<div class="main">
+
+  <div class="header">
+    <div class="header_resize">
+      <div class="logo"><h1><a href="index.html">RelaxMap</a></h1></div>
+      <div class="menu_nav">
+        <ul>
+          <li><a href="index.html"><span>Home</span></a></li>
+          <li class="active"><a href="experiments.html"><span>Experiments</span></a></li>
+		  <li><a href="http://www.mapequation.org" target="_blank"><span>Map Equation</span></a></li>
+          <li><a href="http://db.cs.washington.edu" target="_blank"><span>UW DB Group</span></a></li>
+          <!--<li><a href="http://www.cs.washington.edu" target="_blank"><img src="images/uw_cse_banner.png" width="200px" /></a></li>-->
+        </ul>
+      </div>
+      <div class="clr"></div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="content_resize">
+      <div class="mainbar"><div class="submb">
+		<a name="quality"></a>
+        <div class="article">
+		  <p>
+		  You can check out the details of the experimental results from our <a href="index.html#publications">ICDMW 2013 paper</a>.<br />
+		  Here, we present briefly the experimental results.
+		  </p>
+          <h2>Output Quality Comparison</h2>
+		  <h3>Benchmark Datasets</h3>
+		  <p>
+			<object width="400px" height="300px" data="results/NMI_vs_mixParam_directNet_5k_sm_mu.pdf"></object>
+		  </p>
+		  <p>
+			The average normalized mutual information (NMI) as
+			a function of the mixing parameter comparing Infomap and
+			RelaxMap for the <em>directNet-5k</em> synthetic dataset. This implies
+			that the RelaxMap generates outputs that are very similar to
+			the outputs of the Infomap algorithm.
+		  </p>
+		  <h3>Real-World Datasets</h3>
+		  <p>
+			<object width="400px" height="400px" data="results/avg_min_max_soc-LiveJournal1_opt_mdl_comparison.pdf"></object>
+		  </p>
+		  <p>
+		  The output quality comparison between the Infomap and RelaxMap algorithm (1-way and 8-way parallelism) 
+		  with <a href="http://snap.stanford.edu/data/soc-LiveJournal1.html">soc-LiveJournal1</a>
+		  datasets from <a href="http://snap.stanford.edu/data/">SNAP</a> data repository. 
+		  In this plot, the x-axis represents three different algorithms and the y-axis is the MDL score. 
+		  The output qualities of the RelaxMap-1 and RelaxMap-8 are similar to the output quality of the Infomap. 
+		  </p>
+        </div>
+		<a name="runtime"></a>
+        <div class="article">
+          <h2>Shared-Memory Parallel Performnce</h2>
+		  <h3>Parallel Efficiency</h3>
+		  <p>
+			<object width="500px" height="500px" data="results/efficiency_vs_nProc_polaris.pdf"></object>
+			<!-- <embed width="400px" height="400px" src="results/efficiency_vs_nProc_polaris.pdf"> -->
+		  </p>
+		  <p>
+			Parallel efficiency of the <b>RelaxMap</b> on a 12-core machine,
+			two six-core Intel Xeon E5-2430L processors (2.00 GHz, 15 MB Intel Smart Cache) and 64 GB of main memory, 
+			with 6 real world datasets.
+		  </p>
+        </div>
+      </div></div>
+      <div class="sidebar">
+        <div class="gadget">
+          <h2 class="star">Menu</h2>
+          <ul class="sb_menu">
+            <li><a href="index.html#intro">Introduction</a></li>
+            <li><a href="index.html#publications">Publications</a></li>
+            <li><a href="index.html#dependency">Dependency</a></li>
+            <li><a href="index.html#guide">User Guide</a></li>
+            <li><a href="index.html#related">Related</a></li>
+			<li><a href="experiments.html">Experiments</a></li>
+            <li><a href="index.html#contact">Contact Us</a></li>
+          </ul>
+        </div>
+        <!-- <div class="gadget">
+          <h2 class="star">Sponsors</h2>
+          <ul class="ex_menu">
+            <li><a href="http://www.dreamtemplate.com" title="Website Templates">DreamTemplate</a><br />Over 6,000+ Premium Web Templates</li>
+            <li><a href="http://www.templatesold.com" title="WordPress Themes">TemplateSOLD</a><br />Premium WordPress &amp; Joomla Themes</li>
+            <li><a href="http://www.imhosted.com" title="Affordable Hosting">ImHosted.com</a><br />Affordable Web Hosting Provider</li>
+            <li><a href="http://www.dreamstock.com" title="Stock Photos">DreamStock</a><br />Download Amazing Stock Photos</li>
+            <li><a href="http://www.evrsoft.com" title="Website Builder">Evrsoft</a><br />Website Builder Software &amp; Tools</li>
+            <li><a href="http://www.myvectorstore.com" title="Stock Icons">MyVectorStore</a><br />Royalty Free Stock Icons</li>
+          </ul>
+        </div> -->
+      </div>
+      <div class="clr"></div>
+    </div>
+  </div>
+
+<!--
+  <div class="fbg">
+    <div class="fbg_resize">
+      <div class="col c1">
+        <h2>About</h2>
+        <img src="images/white.jpg" width="64" height="64" alt="pix" />
+        <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Donec libero. Suspendisse bibendum. Cras id urna. Morbi tincidunt, orci ac convallis aliquam, lectus turpis varius llorem, eu posuere nunc justo tempus leo. Donec mattis, purus nec placerat bibendum, dui pede condimentum odio, ac blandit ante orci ut diam. <a href="#">Learn more...</a></p>
+        <div class="clr"></div>
+      </div>
+      <div class="col c2">
+        <h2>Lorem Ipsum</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur dui nunc, molestie ut porta et, egestas vel justo. Suspendisse bibendum. Cras id urna. Morbi tincidunt, orci ac convallis aliquam, lectus turpis varius lorem, eu posuere nunc justo tempus leo.</p>
+        <ul class="sb_menu">
+          <li><a href="#">semper</a></li>
+          <li><a href="#">magna sed purus</a></li>
+          <li><a href="#">tincidunt</a></li>
+        </ul>
+      </div>
+      <div class="col c3">
+        <h2>Image Gallery</h2>
+        <a href="#" class="nobg"><img src="images/pix1.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix2.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix3.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix4.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix5.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+        <a href="#" class="nobg"><img src="images/pix6.jpg" width="64" height="64" alt="ad" class="ad" /></a>
+      </div>
+      <div class="clr"></div>
+    </div>
+  </div>
+-->
+  <div class="footer">
+    <div class="footer_resize">
+      <p class="lf">&copy; Copyright Seung-Hee Bae, Bill Howe, and UW CSE Database Group. Designed by Blue <a href="http://www.bluewebtemplates.com">Website Templates</a></p>
+   <!--   <ul class="fmenu">
+        <li class="active"><a href="index.html">Home</a></li>
+        <li><a href="support.html">Support</a></li>
+        <li><a href="blog.html">Blog</a></li>
+        <li><a href="about.html">About Us</a></li>
+        <li><a href="contact.html">Contacts</a></li>
+      </ul> -->
+      <div class="clr"></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

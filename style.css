@@ -1,0 +1,100 @@
+/*
+Design by http://www.bluewebtemplates.com
+Released for free under a Creative Commons Attribution 3.0 License
+*/
+@charset "utf-8";
+body { margin:0; padding:0; width:100%; color:#5f5f5f; font:normal 12px/1.8em Georgia, "Times New Roman", Times, serif;}
+html, .main { padding:0; margin:0; background-color:#fff;}
+.clr { clear:both; padding:0; margin:0; width:100%; font-size:0px; line-height:0px;}
+h1 { margin:0; padding:64px 40px; color:#000; font:normal 32px/1.2em Georgia, "Times New Roman", Times, serif;}
+h1 a, h1 a:hover { color:#000; text-decoration:none;}
+h2 { font:normal 24px Georgia, "Times New Roman", Times, serif; color:#323a3f; padding:8px 0; margin:8px 0;}
+p { margin:8px 0; padding:0 0 8px 0; font:normal 12px/1.8em Georgia, "Times New Roman", Times, serif;}
+a { color:#70a32c; text-decoration:underline;}
+
+.header, .hbg, .content, .menu_nav, .fbg, .footer, form, ol, ol li, ul, .content .mainbar, .content .sidebar { margin:0; padding:0;}
+.content_resize, .fbg_resize, .footer_resize { margin:0 auto; padding:0 40px; width:890px;}
+.fbg, .footer { padding:16px 0;}
+
+/* header */
+.header { background:url(images/header_bg.jpg) repeat-x top;}
+.header_resize { margin:0 auto; padding:0; width:970px; height:200px;}
+.header .logo { width:317px; height:180px; float:left; background:url(images/logo.png) no-repeat left top;}
+
+/* menu */
+.menu_nav { height:52px; float:right; width:auto; padding-top:90px;}
+.menu_nav ul { width:auto; list-style:none;}
+.menu_nav ul li { margin:0 1px; float:left;}
+.menu_nav ul li a { display:block; margin:0; padding:23px 9px 23px 0; color:#fff; text-decoration:none; text-transform:uppercase;}
+.menu_nav ul li a span { padding:23px;}
+.menu_nav ul li a:hover, .menu_nav ul li.active a { background:url(images/menu_a.png) no-repeat right top; color:#609227;}
+.menu_nav ul li a:hover span, .menu_nav ul li.active a span { background-color:#e8ebd8;}
+
+/* content */
+.content { padding-bottom:16px;}
+.content_resize { padding:16px 40px 16px 0; width:930px;}
+.content img { padding:4px; border:0px solid #bbb;}
+.content img.ilf { margin-right:16px; float:left;}
+.content .mainbar { float:left; width:660px; padding-right:17px; background:url(images/mainbar_bg.png) no-repeat right top;}
+.content .mainbar .submb { padding:24px 23px 24px 40px; background-color:#e8ebd8;}
+.content .mainbar .article, .content .sidebar .gadget { margin:0; padding:0 0 16px 0;}
+.content .sidebar { float:right; width:236px;}
+ul.sb_menu, ul.ex_menu { margin:0; padding:0; list-style:none;}
+ul.sb_menu li, ul.ex_menu li { margin:0;}
+ul.sb_menu li { padding:4px 0;}
+ul.ex_menu li { padding:4px 0 8px;}
+ul.sb_menu li a, ul.ex_menu li a { text-decoration:none;}
+ul.sb_menu li a:hover, ul.ex_menu li a:hover { font-weight:bold;}
+ul.sb_menu li a:hover { text-decoration:underline;}
+ul.ex_menu li a:hover { text-decoration:none;}
+
+/* subpages */
+.content .mainbar .comment { margin:0; padding:16px 0 0 0;}
+.content .mainbar .comment img.userpic { border:1px solid #dedede; margin:10px 16px 0 0; padding:0; float:left;}
+
+
+code {
+    margin: 5px 0;
+    padding: 15px;
+    text-align: left;
+    display: block;
+    overflow: auto;  
+    font: 500 1em/1.5em 'Lucida Console', 'courier new', monospace ;
+    /* white-space: pre; */
+    border: 1px solid #EBEBEB;
+    background: #F0F0F0;  
+}
+
+
+
+/* fbg */
+.fbg { background-color:#99c751; color:#fff;}
+.fbg a, .fbg h2 { color:#fff;}
+.fbg img { border:1px solid #fff;}
+.fbg .col { margin:0; float:left;}
+.fbg .c1 { padding:0 16px 0 0; width:286px;}
+.fbg .c2 { padding:0 16px; width:286px;}
+.fbg .c3 { padding:0 0 0 16px; width:250px;}
+.fbg .c1 img, .fbg .c3 img { margin:4px;}
+.fbg .c1 img { margin:8px 16px 4px 0; padding:0; float:left;}
+.fbg ul li a { color:#fff;}
+
+/* footer */
+.footer { background-color:#f8f8f8;}
+.footer p.lf { margin:0; padding:4px 0; float:left; width:auto; line-height:1.5em;}
+ul.fmenu { margin:0; padding:2px 0; list-style:none; float:right; width:auto;}
+ul.fmenu li { margin:0; padding:0 4px; float:left;}
+ul.fmenu li a { text-decoration:none; padding:2px 6px; color:#5f5f5f;}
+ul.fmenu li a:hover, ul.fmenu li.active a { color:#73a62d; background:none;}
+ul.fmenu li a:hover { text-decoration:underline;}
+
+/* form */
+/*ol { list-style:lower-roman;}
+ol li { display:list-item; clear:both;}
+ol li label { display:list-item; margin:0; padding:16px 0 0 0;}*/
+ol { list-style:none;}
+ol li { display:block; clear:both;}
+ol li label { display:block; margin:0; padding:16px 0 0 0;}
+ol li input.text { width:480px; border:1px solid #c0c0c0; margin:2px 0; padding:5px 2px; height:16px; background:#fff;}
+ol li textarea { width:480px; border:1px solid #c0c0c0; margin:2px 0; padding:2px; background:#fff;}
+ol li .send { margin:16px 0 0 0;}
