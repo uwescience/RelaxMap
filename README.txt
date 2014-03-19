@@ -1,4 +1,4 @@
-Copyright (C) 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
+Copyright (C) since 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
 
 RelaxMap is a parallel community detection algorithm to optimize flow-based information-theoretic objective function, called the map equation. 
 RelaxMap is under GNU General Public License, detailed information is in LICENSE.txt.
@@ -17,7 +17,7 @@ You can compile by simple make command:
 
 2. How to run RelaxMap
 
-	[Usage] >./ompRelaxmap <seed> <network data> <# threads> <# attempts> <threshold> <maxIter> <outDir> <adapt/fixed> 
+	[Usage] >./ompRelaxmap <seed> <network data> <# threads> <# attempts> <threshold> <vThresh> <maxIter> <outDir> <prior/normal>
 
 The required arguments are following:
 
@@ -34,11 +34,13 @@ The required arguments are following:
 
 	5) threshold: the stop condition threshold  (recommended 1e-3 or 1e-4)
 
-	6) maxIter: the number of maximum iteration for each super-step.
+	6) vThresh: the threshold value for each vertex movement (recommended 0.0)
 
-	7) outDir: the directory where the output files will be located.
+	7) maxIter: the number of maximum iteration for each super-step. (recommended 10)
 
-	8) adapt/fixed flag: use either adapt or fixed for adaptive-threshold or fixed-threshold option.
+	8) outDir: the directory where the output files will be located.
+
+	9) prior/normal flag: apply the prioritized search for efficient runs (prior) or not (normal).  (recommended prior)
 
 
 3. Reference
@@ -54,3 +56,4 @@ If you would like to add a reference for this application in documents, please p
 
 If you find a bug, please send a bug report to 
 	Seung-Hee Bae: shbae@cs.washington.edu
+	Bill Howe: billhowe@cs.washington.edu

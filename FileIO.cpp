@@ -1,7 +1,7 @@
 /*
  *	Author:	Seung-Hee Bae (shbae@cs.washington.edu)
- *	Date:	Dec. 2013
- *	Copyright (C) 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
+ *	Date:	Mar. 2014
+ *	Copyright (C) since 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
  */
 
 #include <iostream>
@@ -135,7 +135,6 @@ void load_pajek_format_network(string fName, Network &network) {
 
   double newLinkWeight;
   int NdoubleLinks = 0;
-	//map<int,map<int,double> > Links;
   
   // Read links in format "from to weight", for example "1 3 0.7"
   while(getline(net,line) != NULL){
@@ -240,7 +239,6 @@ void load_linkList_format_network(string fName, Network &network) {
 		nodeNames[nodeCounter] = to_string((*it));
 		renumber.insert(make_pair((*it), nodeCounter));
 
-		//network.nodes[nodeCounter].setID((*it));
 		network.nodes[nodeCounter].setID(nodeCounter);
 		network.nodes[nodeCounter].setName(nodeNames[nodeCounter]);
 
