@@ -1,7 +1,7 @@
 /*
  *	Author:	Seung-Hee Bae (shbae@cs.washington.edu)
- *	Date:	Dec. 2013
- *	Copyright (C) 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
+ *	Date:	Mar. 2014
+ *	Copyright (C) since 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
  */
 
 #include <iostream>
@@ -28,10 +28,11 @@ unsigned stou(char *s) {
 }
 
 
-void stochastic_greedy_partition(Network &network, int numTh, double threshold, int maxIter, bool adapt, bool fineTune, bool fast);
-void partition_module_network(Network &network, int numTh, double threshold, int maxIter, bool adapt);
-void generate_sub_modules(Network &network, int numTh, double threshold, int maxIter, bool adapt);
+void stochastic_greedy_partition(Network &network, int numTh, double threshold, double vThresh, int maxIter, bool prior, bool fineTune, bool fast);
+void partition_module_network(Network &network, int numTh, double threshold, int maxIter, bool fast);
+void generate_sub_modules(Network &network, int numTh, double threshold, int maxIter);
 void generate_network_from_module(Network &newNetwork, Module* mod, map<int, int>& origNodeID, int numTh);
+void generate_network_from_module(Network &newNetwork, Module* mod, map<int, int> &origNodeID);
 void print_twoLevel_Cluster(Network network, string networkName, string outDir);
 
 void findAssignedPart(int* start, int* end, int numNodes, int numTh, int myID);
@@ -39,13 +40,13 @@ void findAssignedPart(int* start, int* end, int numNodes, int numTh, int myID);
 
 int main(int argc, char *argv[]) {
 
-	if( argc < 9){ 
-		cout << "Call: ./ompInfomap <seed> <network.net> <# threads> <# attempts> <threshold> <maxIter> <outDir> <adapt/fixed> [selflinks]" << endl;
+	if( argc < 10){ 
+		cout << "Call: ./ompRelaxmap <seed> <network.net> <# threads> <# attempts> <threshold> <vThresh> <maxIter> <outDir> <prior/normal>  [selflinks]" << endl;
 		exit(-1);
 	}
 	
-	string outDir = string(argv[7]);
-	int maxIter = atoi(argv[6]);	// Set the maximum number of iteration..
+	string outDir = string(argv[8]);
+	int maxIter = atoi(argv[7]);	// Set the maximum number of iteration..
 	int Ntrials = atoi(argv[4]);  // Set number of partition attempts
 	int numThreads = atoi(argv[3]);	// Set number of threads...
 	string line;
@@ -55,21 +56,24 @@ int main(int argc, char *argv[]) {
 
 	string infile = string(argv[2]);
 	string networkFile = string(argv[2]);
-	//string networkName(networkFile.begin(),networkFile.begin() + networkFile.find_last_of("."));
 	string networkName(networkFile.begin() + networkFile.find_last_of("/"), networkFile.begin() + networkFile.find_last_of("."));
 	string networkType(infile.begin() + infile.find_last_of("."), infile.end());
 
 	double threshold = atof(argv[5]);
+	double vThresh = atof(argv[6]);		// vertex-threshold: threshold for each vertex-movement.
 
-	string adaptFlag = string(argv[8]);
+	cout << "Threshold = " << threshold << ", Vertex-Threshold = " << vThresh << endl;
+	vThresh *= -1;	// change the threshold value for negative.
 
-	bool adapt = false;
-	if (adaptFlag == "adapt")
-		adapt = true;
+	string priorFlag = string(argv[9]);
+
+	bool prior = false;
+	if (priorFlag == "prior")
+		prior = true;
 
 	bool includeSelfLinks = false;
-	if(argc == 10) {
-		string selfLinks(argv[9]);
+	if(argc == 11) {
+		string selfLinks(argv[10]);
 		if(selfLinks == "selflinks")
 			includeSelfLinks = true;
 	}
@@ -106,7 +110,6 @@ int main(int argc, char *argv[]) {
 
 	gettimeofday(&start, NULL);
 
-	/////////// Parsing the given network /////////////
 	for (int i = 0; i < nNode; i++) {
 		origNetwork.nodes[i].setTeleportWeight(origNetwork.nodes[i].NodeWeight()/totNodeWeights);
 	}
@@ -133,7 +136,8 @@ int main(int argc, char *argv[]) {
   
 
     if(includeSelfLinks)
-		cout << "including " <<  NselfLinks << " self link(s)." << endl;  
+		//cout << "including " <<  NselfLinks << " self link(s)." << endl;  
+		cout << "current version always excludes self links.\nignoring " << NselfLinks << " self link(s)." << endl;
     else
         cout << "ignoring " <<  NselfLinks << " self link(s)." << endl;
 
@@ -182,7 +186,7 @@ int main(int argc, char *argv[]) {
 	// Initial SuperStep running ...
 	double oldCodeLength = origNetwork.CodeLength();
 
-	stochastic_greedy_partition(origNetwork, numThreads, threshold, maxIter, adapt, fineTune, fast);
+	stochastic_greedy_partition(origNetwork, numThreads, threshold, vThresh, maxIter, prior, fineTune, fast);
 	cout << "SuperStep [" << step << "] - codeLength = " << origNetwork.CodeLength()/log(2.0) << " in " << origNetwork.NModule() << " modules." << endl;
 
 	bool nextIter = true;
@@ -195,7 +199,7 @@ int main(int argc, char *argv[]) {
 	while (nextIter) {	
 		oldCodeLength = origNetwork.CodeLength();
 
-		stochastic_greedy_partition(origNetwork, numThreads, threshold, maxIter, adapt, fineTune, fast);
+		stochastic_greedy_partition(origNetwork, numThreads, threshold, vThresh, maxIter, prior, fineTune, fast);
 
 		step++;
 		cout << "SuperStep [" << step << "] - codeLength = " << origNetwork.CodeLength()/log(2.0) << " in " << origNetwork.NModule() << " modules." << endl;
@@ -207,9 +211,8 @@ int main(int argc, char *argv[]) {
 
 		if (nextIter && !fineTune) {
 			// Next iteration will be Coarse Tune.
-			//generate_sub_modules(origNetwork, numThreads, threshold, maxIter, adapt);
 			gettimeofday(&subStart, NULL);
-			generate_sub_modules(origNetwork, numThreads, threshold, maxIter, false);
+			generate_sub_modules(origNetwork, numThreads, threshold, maxIter);
 			gettimeofday(&subEnd, NULL);
 			cout << "Time for finding sub-modules: " << elapsedTimeInSec(subStart, subEnd) << " (sec)" << endl;
 		}
@@ -238,7 +241,6 @@ int main(int argc, char *argv[]) {
 	ostringstream oss;
 
 	oss.str("");
-	//oss << networkName << ".clu";
 	oss << outDir << "/" << networkName << ".clu";
 	outFile.open(oss.str().c_str());
 	outFile << "*Vertices " << nNode << "\x0D\x0A";
@@ -256,14 +258,13 @@ int main(int argc, char *argv[]) {
  *	   If no move results in a gain of the map equation, the node stays in its original module.
  *	2) repeated 1) procedure, each time in a new random sequential order, until no move generates a gain of the map EQ.
  *
- *	This function actually implements 2) procedure.
  *	The 1) procedure is implemented in Network::move() function.
  */
-void stochastic_greedy_partition(Network &network, int numTh, double threshold, int maxIter, bool adapt, bool fineTune, bool fast) {
+void stochastic_greedy_partition(Network &network, int numTh, double threshold, double vThresh, int maxIter, bool prior, bool fineTune, bool fast) {
 
 	double oldCodeLength = network.CodeLength();
 	int iter = 0;
-	bool moved = true;
+	bool stop = false;
 
 	struct timeval outer_T1, outer_T2;
 	struct timeval inner_T1, inner_T2;
@@ -274,84 +275,67 @@ void stochastic_greedy_partition(Network &network, int numTh, double threshold, 
 
 	gettimeofday(&outer_T1, NULL);
 
-	double adaptThresh = threshold;
-
-	if (fineTune) 
-		cout << network.NNode() << ", ";
-	else
-		cout << network.superNodes.size() << ", ";
+	int nActiveUnits = (fineTune) ? network.NNode() : network.superNodes.size();
+	cout << nActiveUnits << ", ";
 
 
-	// Check the average and min-max degree
-	int minDeg = network.NNode() * 2;
-	int maxDeg = 0;
-	int sumDeg = 0;
-
-	int currentDeg = 0;
-	if (fineTune) {
-		for (vector<Node>::iterator nd = network.nodes.begin(); nd != network.nodes.end(); nd++) {
-			currentDeg = nd->outLinks.size() + nd->inLinks.size();
-			sumDeg += currentDeg;
-			if (currentDeg < minDeg)
-				minDeg = currentDeg;
-
-			if (currentDeg > maxDeg)
-				maxDeg = currentDeg;
-		}
-
-		cout << "avgDeg: " << (double)sumDeg / network.NNode() << ", ";
-		cout << "minDeg: " << minDeg << ", " << "maxDeg: " << maxDeg << ", ";
-	}
-	else {
-		for (vector<SuperNode>::iterator nd = network.superNodes.begin(); 
-										 nd != network.superNodes.end(); nd++) {
-			currentDeg = nd->outLinks.size() + nd->inLinks.size();
-			sumDeg += currentDeg;
-			if (currentDeg < minDeg)
-				minDeg = currentDeg;
-
-			if (currentDeg > maxDeg)
-				maxDeg = currentDeg;
-		}
-
-		cout << "avgDeg: " << (double)sumDeg / network.superNodes.size() << ", ";
-		cout << "minDeg: " << minDeg << ", " << "maxDeg: " << maxDeg << ", ";
+	// set initial active nodes list ...
+	vector<char>(nActiveUnits).swap(network.isActives);
+	vector<int>(nActiveUnits).swap(network.activeNodes);
+	for (int i = 0; i < nActiveUnits; i++) {
+		network.activeNodes[i] = i;
+		network.isActives[i] = 0;	// initially set inactive nodes.
 	}
 
 
+	int numMoved = 0;
 
-	cout << "Initial Threshold:" << threshold << endl;
-
-
-	while (moved && iter < maxIter) {
+	while (!stop && iter < maxIter) {
 		gettimeofday(&inner_T1, NULL);
 
-		moved = false;
 		oldCodeLength = network.CodeLength();
 
 		if (fineTune) {
-			if (numTh == 1) 
-				moved = network.move();		// If at least one node is moved, return true. Otherwise, return false.
-			else 
-				moved = network.parallelMove(numTh, tSequential);
+			if (numTh == 1) {
+				if (prior)
+					numMoved = network.prioritize_move(vThresh);
+				else
+					numMoved = network.move();
+			}
+			else { 
+				if (prior)
+					numMoved = network.prioritize_parallelMove(numTh, tSequential, vThresh);
+				else
+					numMoved = network.parallelMove(numTh, tSequential);
+			}
 		} 
 		else {
-			if (numTh == 1) 
-				moved = network.moveSuperNodes();		// If at least one node is moved, return true. Otherwise, return false.
-			else 
-				moved = network.parallelMoveSuperNodes(numTh, tSequential);
+			if (numTh == 1) {
+				if (prior)
+					numMoved = network.prioritize_moveSPnodes(vThresh);
+				else 
+					numMoved = network.moveSuperNodes();		// If at least one node is moved, return true. Otherwise, return false.
+			}
+			else {
+				if (prior) 
+					numMoved = network.prioritize_parallelMoveSPnodes(numTh, tSequential, vThresh);
+				else
+					numMoved = network.parallelMoveSuperNodes(numTh, tSequential);
+			}
 		}
 		iter++;
 
 		if (oldCodeLength - network.CodeLength() >= 0 && (oldCodeLength - network.CodeLength())/log(2.0) < threshold)
-			moved = false;
+			stop = true;	//moved = false;
 
 		gettimeofday(&inner_T2, NULL);
 
 		// Print code length per iteration for DEBUG purpose.
 		cout << "Iteration " << iter << ": code length =\t" << network.CodeLength()/log(2.0) << "\t, ";
 		cout << "elapsed time:\t" << elapsedTimeInSec(inner_T1, inner_T2) << "\t(sec), ";
-		cout << "accumulated time:\t" << elapsedTimeInSec(outer_T1, inner_T2) << "\t(sec)" << endl;
+		cout << "accumulated time:\t" << elapsedTimeInSec(outer_T1, inner_T2) << "\t(sec)\t";
+		cout << "sumExitPr = " << network.SumAllExitPr() << "\t";
+		cout << "numMoved:\t" << numMoved << endl;
 	}
 
 	gettimeofday(&seq_T1, NULL);
@@ -371,68 +355,59 @@ void stochastic_greedy_partition(Network &network, int numTh, double threshold, 
 	do {
 		oldCodeLength = network.CodeLength();
 
-		moved = true;
+		stop = false;
+
 		gettimeofday(&convert_T1, NULL);
 		network.convertModulesToSuperNodes(numTh);
 		gettimeofday(&convert_T2, NULL);
 
 		tConvert += elapsedTimeInSec(convert_T1, convert_T2);
 
-		cout << network.NModule() << ", ";
+		nActiveUnits = network.superNodes.size();
+		cout << nActiveUnits << ", ";
 
 
+		// set initial active nodes list ...
+		vector<char>(nActiveUnits).swap(network.isActives);
+		vector<int>(nActiveUnits).swap(network.activeNodes);
+		for (int i = 0; i < nActiveUnits; i++) {
+			network.activeNodes[i] = i;	// initially all active units are active.
+			network.isActives[i] = 0;	// initially set inactive nodes.
+		}
 
-		// Check the average and min-max degree
-		minDeg = network.NNode() * 2;
-		maxDeg = 0;
-		sumDeg = 0;
-
-		currentDeg = 0;
-		for (vector<SuperNode>::iterator nd = network.superNodes.begin(); 
-									 nd != network.superNodes.end(); nd++) {
-			currentDeg = nd->outLinks.size() + nd->inLinks.size();
-			sumDeg += currentDeg;
-			if (currentDeg < minDeg)
-				minDeg = currentDeg;
-
-			if (currentDeg > maxDeg)
-				maxDeg = currentDeg;
-		}	
-
-		cout << "avgDeg: " << (double)sumDeg / network.superNodes.size() << ", ";
-		cout << "minDeg: " << minDeg << ", " << "maxDeg: " << maxDeg << ", ";
-
-
-
-		if (adapt)
-			adaptThresh = threshold * network.NModule() / network.NNode();
-		
-		cout << "Current Threshold: " << adaptThresh <<endl;
 
 		int spIter = 0;
-		while (moved && spIter < maxIter) {
+		while (!stop && spIter < maxIter) {
 			gettimeofday(&inner_T1, NULL);
 
-			moved = false;
-		
 			double innerOldCodeLength = network.CodeLength();
 
-			if (numTh == 1)
-				moved = network.moveSuperNodes();
-			else 
-				moved = network.parallelMoveSuperNodes(numTh, tSequential);
+			if (numTh == 1) {
+				if (prior)
+					numMoved = network.prioritize_moveSPnodes(vThresh);
+				else 
+					numMoved = network.moveSuperNodes();
+			}
+			else { 
+				if (prior)
+					numMoved = network.prioritize_parallelMoveSPnodes(numTh, tSequential, vThresh);
+				else
+					numMoved = network.parallelMoveSuperNodes(numTh, tSequential);
+			}
 
 			spIter++;
 
-			if (innerOldCodeLength - network.CodeLength() >= 0.0 && (innerOldCodeLength - network.CodeLength())/log(2.0) < adaptThresh)
-				moved = false;
+			if (innerOldCodeLength - network.CodeLength() >= 0.0 && (innerOldCodeLength - network.CodeLength())/log(2.0) < threshold)
+				stop = true;	//moved = false;
 
 			gettimeofday(&inner_T2, NULL);
 
 			// Print code length per spIter for DEBUG purpose.
 			cout << "SuperIteration " << outerLoop << "-" << spIter << ": code length =\t" << network.CodeLength()/log(2.0) << "\t, ";
 			cout << "elapsed time:\t" << elapsedTimeInSec(inner_T1, inner_T2) << "\t(sec), ";
-			cout << "accumulated time:\t" << elapsedTimeInSec(outer_T1, inner_T2) << "\t(sec)" << endl;
+			cout << "accumulated time:\t" << elapsedTimeInSec(outer_T1, inner_T2) << "\t(sec)\t";
+			cout << "sumExitPr = " << network.SumAllExitPr() << "\t";
+			cout << "numMoved:\t" << numMoved << endl;
 		}
 
 		gettimeofday(&seq_T1, NULL);
@@ -444,7 +419,7 @@ void stochastic_greedy_partition(Network &network, int numTh, double threshold, 
 		gettimeofday(&seq_T2, NULL);
 		tSequential += elapsedTimeInSec(seq_T1, seq_T2);
 
-	} while ((oldCodeLength - network.CodeLength())/log(2.0) > adaptThresh);
+	} while ((oldCodeLength - network.CodeLength())/log(2.0) > threshold);
 	
 	gettimeofday(&outer_T2, NULL);
 	
@@ -462,24 +437,26 @@ void partition_module_network(Network &network, int numTh, double threshold, int
 
 	double oldCodeLength = network.CodeLength();
 	int iter = 0;
-	bool moved = true;
+	bool stop = false;
 
 	double tSequential;
-	double adaptThresh = threshold;
 
-	while (moved && iter < maxIter) {
-		moved = false;
+	int numMoved = 0;
+
+	while (!stop && iter < maxIter) {
 		oldCodeLength = network.CodeLength();
 
-		if (numTh == 1) 
-			moved = network.move();		// If at least one node is moved, return true. Otherwise, return false.
-		else 
-			moved = network.parallelMove(numTh, tSequential);
+		if (numTh == 1) {
+			numMoved = network.move();
+		}
+		else { 
+			numMoved = network.parallelMove(numTh, tSequential);
+		}
 
 		iter++;
 
 		if ((oldCodeLength - network.CodeLength())/log(2.0) < threshold)
-			moved = false;
+			stop = true;
 	}
 
 	int outerLoop = 1;
@@ -492,37 +469,37 @@ void partition_module_network(Network &network, int numTh, double threshold, int
 	do {
 		oldCodeLength = network.CodeLength();
 
-		moved = true;
+		stop = false;
 		network.convertModulesToSuperNodes(numTh);
 
 		int spIter = 0;
-		while (moved && spIter < maxIter) {
-			moved = false;
-		
+		while (!stop && spIter < maxIter) {
 			double innerOldCodeLength = network.CodeLength();
 
-			if (numTh == 1)
-				moved = network.moveSuperNodes();
-			else 
-				moved = network.parallelMoveSuperNodes(numTh, tSequential);
+			if (numTh == 1) {
+				numMoved = network.moveSuperNodes();
+			}
+			else {
+				numMoved = network.parallelMoveSuperNodes(numTh, tSequential);
+			}
 
 			spIter++;
 
-			if ((innerOldCodeLength - network.CodeLength())/log(2.0) < adaptThresh)
-				moved = false;
+			if ((innerOldCodeLength - network.CodeLength())/log(2.0) < threshold)
+				stop = true;
 		}
 
 		network.updateMembersInModule();
 
 		outerLoop++;
 
-	} while ((oldCodeLength - network.CodeLength())/log(2.0) > adaptThresh);
+	} while ((oldCodeLength - network.CodeLength())/log(2.0) > threshold);
 
 }
 
 
 
-void generate_sub_modules(Network &network, int numTh, double threshold, int maxIter, bool adapt) {
+void generate_sub_modules(Network &network, int numTh, double threshold, int maxIter) {
 	int numNodes = network.NNode();
 
 	struct timeval t1, t2;
@@ -554,17 +531,9 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 	int numSmallMods = network.smActiveMods.size();
 	cout << "number of small modules: " << numSmallMods << endl;
 
-#pragma omp parallel
-{
-	int myID = omp_get_thread_num();	// get my thread ID.
-	int index = myID;
-	
-	int start, end;
-
-	findAssignedPart(&start, &end, numSmallMods, numTh, myID);
-
-	//for (int i = 0; i < numSmallMods; i++) {
-	for (int i = start; i < end; i++) {
+#pragma omp parallel for schedule(dynamic, 100)
+	for (int i = 0; i < numSmallMods; i++) {
+		int myID = omp_get_thread_num();	// get my thread ID.
 		
 		Module* mod = &(network.modules[network.smActiveMods[i]]);
 
@@ -575,7 +544,7 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 			map<int, int> origNodeID;	//map from newNodeID to original Node ID. a.k.a. <newNodeID, origNodeID>
 
 			Network newNetwork;
-			generate_network_from_module(newNetwork, mod, origNodeID, 1);
+			generate_network_from_module(newNetwork, mod, origNodeID);
 			newNetwork.R = Rand;
 
 			partition_module_network(newNetwork, 1, threshold, maxIter, true);		// fast = true..
@@ -584,16 +553,16 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 			// Adding sub-modules from a new network of the corresponding module to the list of subModules...
 			for (int j = 0; j < nActiveMods; j++) {
 				SubModule subMod(newNetwork.modules[newNetwork.smActiveMods[j]], origNodeID, modIdx);
-				tmpSubModList[index].push_back(subMod);
+				tmpSubModList[myID].push_back(subMod);
 			}
 		}
 		else {
 			// This is the special case that the module has ONLY ONE member.
 			SubModule subMod(*mod);
-			tmpSubModList[index].push_back(subMod);
+			tmpSubModList[myID].push_back(subMod);
 		}
-	}
-}	// End of parallel.
+	} // End of for
+//}	// End of parallel.
 	gettimeofday(&tPar2, NULL);
 
 	cout << "Time for parallel for loop for SMALL-MODULES:\t" << elapsedTimeInSec(tPar1, tPar2) << " (sec)" << endl;
@@ -608,76 +577,36 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 	int numLargeMods = network.lgActiveMods.size();
 	cout << "number of large modules: " << numLargeMods << endl;
 
-	if (numLargeMods >= numTh) {
+	for (int i = 0; i < numLargeMods; i++) {
+		Module* mod = &(network.modules[network.lgActiveMods[i]]);
+
+		// NO-NEED to check the size of the current module.
+		int modIdx = mod->Index();
+
+		map<int, int> origNodeID;	//map from newNodeID to original Node ID. a.k.a. <newNodeID, origNodeID>
+			
+		Network newNetwork;
+		generate_network_from_module(newNetwork, mod, origNodeID, numTh);
+		newNetwork.R = Rand;
+
+		partition_module_network(newNetwork, numTh, threshold, maxIter, true);		// fast = true..
+
+		// Adding sub-modules from a new network of the corresponding module to the list of subModules...
+		int nActiveMods = newNetwork.smActiveMods.size();
+		#pragma omp parallel for //schedule(dynamic)
+		for (int j = 0; j < nActiveMods; j++) {
+			SubModule subMod(newNetwork.modules[newNetwork.smActiveMods[j]], origNodeID, modIdx);
+			tmpSubModList[omp_get_thread_num()].push_back(subMod);
+		}
+
+		nActiveMods = newNetwork.lgActiveMods.size();
 		#pragma omp parallel for schedule(dynamic)
-		for (int i = 0; i < numLargeMods; i++) {
-			int myID = omp_get_thread_num();
+		for (int j = 0; j < nActiveMods; j++) {
+			SubModule subMod(newNetwork.modules[newNetwork.lgActiveMods[j]], origNodeID, modIdx);
+			tmpSubModList[omp_get_thread_num()].push_back(subMod);
+		}
+	}	// End of parallel for.
 
-			Module* mod = &(network.modules[network.lgActiveMods[i]]);
-
-			// NO-NEED to check the size of the current module.
-			int modIdx = mod->Index();
-
-			map<int, int> origNodeID;	//map from newNodeID to original Node ID. a.k.a. <newNodeID, origNodeID>
-			
-			Network newNetwork;
-			generate_network_from_module(newNetwork, mod, origNodeID, 1);
-			newNetwork.R = Rand;
-
-			partition_module_network(newNetwork, 1, threshold, maxIter, true);		// fast = true..
-
-			// Adding sub-modules from a new network of the corresponding module to the list of subModules...
-
-			int nActiveMods = newNetwork.smActiveMods.size();
-			// Adding sub-modules from a new network of the corresponding module to the list of subModules...
-			for (int j = 0; j < nActiveMods; j++) {
-				SubModule subMod(newNetwork.modules[newNetwork.smActiveMods[j]], origNodeID, modIdx);
-				tmpSubModList[myID].push_back(subMod);
-			}
-
-			nActiveMods = newNetwork.lgActiveMods.size();
-			// Adding sub-modules from a new network of the corresponding module to the list of subModules...
-			for (int j = 0; j < nActiveMods; j++) {
-				SubModule subMod(newNetwork.modules[newNetwork.lgActiveMods[j]], origNodeID, modIdx);
-				tmpSubModList[myID].push_back(subMod);
-			}
-		}	// End of parallel for.
-	}
-	else {
-		for (int i = 0; i < numLargeMods; i++) {
-			int myID = omp_get_thread_num();
-
-			Module* mod = &(network.modules[network.lgActiveMods[i]]);
-
-			// NO-NEED to check the size of the current module.
-			int modIdx = mod->Index();
-
-			map<int, int> origNodeID;	//map from newNodeID to original Node ID. a.k.a. <newNodeID, origNodeID>
-			
-			Network newNetwork;
-			generate_network_from_module(newNetwork, mod, origNodeID, numTh);
-			newNetwork.R = Rand;
-
-			partition_module_network(newNetwork, numTh, threshold, maxIter, true);		// fast = true..
-			//partition_module_network(newNetwork, numTh, threshold, maxIter, false);		// fast = false..
-
-			int nActiveMods = newNetwork.smActiveMods.size();
-			// Adding sub-modules from a new network of the corresponding module to the list of subModules...
-			#pragma omp parallel for //schedule(dynamic)
-			for (int j = 0; j < nActiveMods; j++) {
-				SubModule subMod(newNetwork.modules[newNetwork.smActiveMods[j]], origNodeID, modIdx);
-				tmpSubModList[omp_get_thread_num()].push_back(subMod);
-			}
-
-			nActiveMods = newNetwork.lgActiveMods.size();
-			// Adding sub-modules from a new network of the corresponding module to the list of subModules...
-			#pragma omp parallel for schedule(dynamic)
-			for (int j = 0; j < nActiveMods; j++) {
-				SubModule subMod(newNetwork.modules[newNetwork.lgActiveMods[j]], origNodeID, modIdx);
-				tmpSubModList[omp_get_thread_num()].push_back(subMod);
-			}
-		}	// End of for.
-	}
 	gettimeofday(&tPar2, NULL);
 
 	cout << "Time for parallel for loop for LARGE-MODULES:\t" << elapsedTimeInSec(tPar1, tPar2) << " (sec)" << endl;
@@ -687,8 +616,7 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 
 	int numSubMods = 0;
 	for (int i = 0; i < numTh; i++) {
-		int myID = i;
-		for (vector<SubModule>::iterator it = tmpSubModList[myID].begin(); it != tmpSubModList[myID].end(); it++) {
+		for (vector<SubModule>::iterator it = tmpSubModList[i].begin(); it != tmpSubModList[i].end(); it++) {
 			network.subModules.push_back(&(*it));
 			for (vector<int>::iterator ndIt = it->members.begin(); ndIt != it->members.end(); ndIt++)
 				network.ndToSubMod[*ndIt] = numSubMods;
@@ -701,8 +629,6 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 	cout << "sequential subModules push_back() time:\t" << elapsedTimeInSec(t1, t2) << " (sec)" << endl;
 
 
-
-
 	gettimeofday(&t1, NULL);
 	network.generateSuperNodesFromSubModules(numTh);
 	gettimeofday(&t2, NULL);
@@ -712,7 +638,78 @@ void generate_sub_modules(Network &network, int numTh, double threshold, int max
 }
 
 
-//Network generate_network_from_module(Module mod, map<int, int>& origNodeID) {
+
+
+void generate_network_from_module(Network &newNetwork, Module* mod, map<int, int> &origNodeID) {
+	int numMembers = mod->NumMembers();
+	newNetwork.modules = vector<Module>(numMembers);
+
+	map<int, int> newNodeID;	// key = origNodeID --> value =  newNodeID.
+
+	int newIdx = 0;
+	for (vector<Node *>::iterator it = mod->members.begin(); it != mod->members.end(); it++) {
+		newNodeID[(*it)->ID()] = newIdx;
+		origNodeID[newIdx] = (*it)->ID();
+
+		Node nd(newIdx, (*it)->Size());
+		nd.setNodeWeight((*it)->NodeWeight());
+		nd.setTeleportWeight((*it)->TeleportWeight());
+		nd.setDanglingSize((*it)->DanglingSize());
+		nd.setIsDangling((*it)->IsDangling());
+
+		newNetwork.nodes.push_back(nd);
+		newIdx++;	// newIdx is equal to the number of nodes in this module (or network.)
+	}
+
+	// add outLinks within the newNetwork.
+	for (int i = 0; i < numMembers; i++) {
+		Node* it = mod->members[i];
+		int nid = newNodeID[it->ID()];
+		Node* nd_ptr = &(newNetwork.nodes[nid]);
+
+		for (link_iterator link_it = it->outLinks.begin(); link_it != it->outLinks.end(); link_it++) {
+			// check whether the edge within the module or not.
+			map<int, int>::iterator m_it = newNodeID.find(link_it->first);
+			if (m_it != newNodeID.end()) {
+				nd_ptr->outLinks.push_back(make_pair(m_it->second, link_it->second));
+			}
+		}
+	}
+
+	// add inLinks within the newNetwork based on the generated outLinks above.
+	for (vector<Node>::iterator it = newNetwork.nodes.begin(); it != newNetwork.nodes.end(); it++) {
+		for (link_iterator l_it = it->outLinks.begin(); l_it != it->outLinks.end(); l_it++) {
+			newNetwork.nodes[l_it->first].inLinks.push_back(make_pair(it->ID(), l_it->second));
+		}
+	}
+
+	double sum_size_log_size = 0.0;
+
+	for (vector<Node>::iterator it = newNetwork.nodes.begin(); it != newNetwork.nodes.end(); it++)
+		sum_size_log_size += pLogP(it->Size());
+
+	newNetwork.setAllLogAll(sum_size_log_size);
+
+	for (int i = 0; i < newIdx; i++) {
+		newNetwork.modules[i] = Module(i, &newNetwork.nodes[i]);
+		newNetwork.nodes[i].setModIdx(i);
+	}
+
+
+	newNetwork.setNModule(newIdx);
+	newNetwork.setNNode(newIdx);
+
+	newNetwork.calibrate(1);	// This function is run in sequential.
+
+}
+
+
+
+
+
+
+
+
 void generate_network_from_module(Network &newNetwork, Module* mod, map<int, int> &origNodeID, int numTh) {
 	int numMembers = mod->NumMembers();
 	newNetwork.modules = vector<Module>(numMembers);
@@ -782,8 +779,7 @@ void generate_network_from_module(Network &newNetwork, Module* mod, map<int, int
 	newNetwork.setNModule(newIdx);
 	newNetwork.setNNode(newIdx);
 
-	newNetwork.calibrate(numTh);	// This function is run in sequential.
-
+	newNetwork.calibrate(numTh);
 }
 
 
@@ -794,7 +790,6 @@ void generate_network_from_module(Network &newNetwork, Module* mod, map<int, int
 void print_twoLevel_Cluster(Network network, string networkName, string outDir) {
 	ofstream outFile;
 	ostringstream oss;
-	//oss << networkName << ".tree";
 	oss << outDir << "/" << networkName << ".tree";
 	outFile.open(oss.str().c_str());
 
@@ -809,7 +804,6 @@ void print_twoLevel_Cluster(Network network, string networkName, string outDir) 
 			modIdx++;
 
 		for (int j = 0; j < nMembers; j++) {
-			//cout << modIdx << ":" << j+1 << " " << network.modules[i].members[j]->Size() << " \"" << network.modules[i].members[j]->Name() << "\"" << endl;
 			outFile << modIdx << ":" << j+1 << " " << network.modules[i].members[j]->Size() << " \"" << network.modules[i].members[j]->Name() << "\"" << endl;
 		}
 	}

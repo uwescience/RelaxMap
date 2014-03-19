@@ -1,7 +1,7 @@
 /*
  *	Author:	Seung-Hee Bae (shbae@cs.washington.edu)
- *	Date:	Dec. 2013
- *	Copyright (C) 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
+ *	Date:	Mar. 2014
+ *	Copyright (C) since 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
  */
 
 #ifndef MODULE_H
@@ -107,9 +107,6 @@ class Network {
 
 	int nDanglings;			// number of dangling nodes.
 
-	//double alpha;			// teleport probability tau.
-	//double beta;			// probability of not teleport moving.
-
 	double allNodes_log_allNodes;	// SUM (p * log(p))
 	double sumAllExitPr;			// SUM (exitPr_i)  i = 1 .. nModule
 
@@ -124,7 +121,6 @@ class Network {
 	vector<Node> nodes;
 	vector<SuperNode> superNodes;
 	vector<int> emptyModules;		// keep the list of the indices of empty modules.
-	//vector<int> activeModules;		// keep the list of the indices of active modules.
 	vector<int> smActiveMods;		// keep the list of the indices of small active modules.
 	vector<int> lgActiveMods;		// keep the list of the indices of large active modules.
 	map<pair<int, int>, double> Edges;	// pair<int, int> will be src and desc of an edge and double is the corresponding weight.
@@ -134,6 +130,10 @@ class Network {
 	vector<int> ndToSubMod;		// This will store subModule ID for each node.
 	vector<SubModule*> subModules;	// This will store SubModules of this network
 									// for coarse-tune optimization..
+
+	// two-vectors for maintaining activeNodes for prioritizing.
+	vector<char> isActives;		// 0 - inactive, 1 - active nodes. Working as a boolean array.
+	vector<int> activeNodes;	// Actual node IDs for active nodes.
 
 	// Constructors and member functions
 	Network();
@@ -179,11 +179,14 @@ class Network {
 	//void calculateSteadyState();	// eigenvector();
 	void calculateSteadyState(int numTh);	// eigenvector();
 	void calibrate(int numTh);
-	bool move();
-	bool parallelMove(int numTh, double & tUpdate);
-	bool parallelMove_oldWay(int numTh);
-	bool moveSuperNodes();
-	bool parallelMoveSuperNodes(int numTh, double & tUpdate);
+	int move();
+	int prioritize_move(double vThresh);
+	int parallelMove(int numTh, double & tUpdate);
+	int prioritize_parallelMove(int numTh, double & tUpdate, double vThresh);
+	int moveSuperNodes();
+	int prioritize_moveSPnodes(double vThresh);
+	int parallelMoveSuperNodes(int numTh, double & tUpdate);
+	int prioritize_parallelMoveSPnodes(int numTh, double & tUpdate, double vThresh);
 	void convertModulesToSuperNodes(int numTh);
 	//void generateSuperNodesFromSubModules();	// generate SuperNodes from SubModule..
 	void generateSuperNodesFromSubModules(int numTh);	// parallel version of the above function.

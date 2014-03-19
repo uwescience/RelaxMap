@@ -1,10 +1,12 @@
 /*
  *	Author:	Seung-Hee Bae (shbae@cs.washington.edu)
- *	Date:	Dec. 2013
- *	Copyright (C) 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
+ *	Date:	Mar. 2014
+ *	Copyright (C) since 2013,  Seung-Hee Bae, Bill Howe, Database Group at the University of Washington
  */
 
 #include <iostream>
+#include <sstream>
+#include <fstream>
 #include <omp.h>
 #include <cstdlib>
 #if defined __GNUCC__ || defined __APPLE__
@@ -19,6 +21,7 @@
 #include "timing.h"
 
 
+//typedef __gnu_cxx::hash_map<int, double> flowmap;
 typedef map<int, double> flowmap;
 typedef map<int, pair<double, double> > modInfo;	// <modID, <exitPr, sumPr> >
 
@@ -469,7 +472,7 @@ void Network::calculateSteadyState(int numTh) {
 // This function calculate current codeLength.
 // This implementation is modified version of infomap implementation.
 void Network::calibrate(int numTh) {
-	//This is the calculation of Equation (4) in the Map Equation paper.
+	//This is the calculation of Equation (4) in the paper.
 	double sum_exit_log_exit = 0.0;
 	double sum_stay_log_stay = 0.0;
 	double sumExit = 0.0;
@@ -497,15 +500,15 @@ void Network::calibrate(int numTh) {
 	codeLength = sumExit_log_sumExit - 2.0 * sum_exit_log_exit + sum_stay_log_stay - allNodes_log_allNodes;
 }
 
-
-
 /*
- * This function implements the 1) procedure of stochastic_greedy_partition(Network &network) function in OmpRelaxmap.cpp.
+ * This function implements the 1) procedure of stochastic_greedy_partition(Network &network) function in SeqInfomap.cpp.
  *
  *	1) in random sequential order, each node is moved to its neighbor module that results in the largest gain of the map eq.
  *	   If no move results in a gain of the map equation, the node stays in its original module.
+ *	
+ *	return: the number of moves.
  */
-bool Network::move() {
+int Network::move() {
 
 	// Generate random sequential order of nodes.
 	vector<int> randomOrder(nNode);
@@ -521,7 +524,7 @@ bool Network::move() {
 		randomOrder[target] = tmp;
 	}
 
-	bool movedAny = false;
+	int numMoved = 0;	// the counter for the number of movements.
 
 	// Move each node to one of its neighbor modules in random sequential order.
 	for (int i = 0; i < nNode; i++) {
@@ -530,10 +533,229 @@ bool Network::move() {
 
 		int nModLinks = 0;	// The number of links to/from between the current node and other modules.
 
+		flowmap outFlowToMod;	// <modID, flow> for outFlow...
+		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
+
+		// count other modules that are connected to the current node.
+		// During this counting, aggregate outFlowNotToOldMod and inFlowFromOldMod values.
+		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+			int newMod = nodes[linkIt->first].ModIdx();
+
+			if (outFlowToMod.count(newMod) > 0) {
+				outFlowToMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = beta * linkIt->second;	// initialization of the outFlow of the current newMod.
+				inFlowFromMod[newMod] = 0.0;
+				nModLinks++;
+			}
+		}
+
+		for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+			int newMod = nodes[linkIt->first].ModIdx();
+
+			if (inFlowFromMod.count(newMod) > 0) {
+				inFlowFromMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = 0.0;
+				inFlowFromMod[newMod] = beta * linkIt->second;
+				nModLinks++;
+			}
+		}
+
+		if (nModLinks != outFlowToMod.size())
+			cout << "ALERT: nModLinks != outFlowToMod.size() in Network::move()." << endl;
+
+		// copy node specific values for easy use and efficiency.
+		double ndSize = nd.Size();					// p_nd.
+		double ndTPWeight = nd.TeleportWeight();		// tau_nd.
+		double ndDanglingSize = nd.DanglingSize();
+
+		double oldExitPr1 = modules[oldMod].ExitPr();
+		double oldSumPr1 = modules[oldMod].SumPr();
+		double oldSumDangling1 = modules[oldMod].SumDangling();
+		double oldModTPWeight = modules[oldMod].SumTPWeight();
+		
+		double additionalTeleportOutFlow = (alpha * ndSize + beta * ndDanglingSize) * (oldModTPWeight - ndTPWeight);
+		double additionalTeleportInFlow = (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
+
+		// For teleportation and danling nodes.
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			if (newMod == oldMod) {
+				outFlowToMod[newMod] += additionalTeleportOutFlow;
+				inFlowFromMod[newMod] += additionalTeleportInFlow;
+			}
+			else {
+				outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].SumTPWeight();
+				inFlowFromMod[newMod] += (alpha * modules[newMod].SumPr() + beta * modules[newMod].SumDangling()) * ndTPWeight;
+			}
+		}
+
+		// Calculate flow to/from own module (default value if no links to own module).
+		double outFlowToOldMod = additionalTeleportOutFlow;
+		double inFlowFromOldMod = additionalTeleportInFlow;
+		if (outFlowToMod.count(oldMod) > 0) {
+			outFlowToOldMod = outFlowToMod[oldMod];
+			inFlowFromOldMod = inFlowFromMod[oldMod];
+		}
+
+
+		//////////////////// THE OPTION TO MOVE TO EMPTY MODULE ////////////////
+		if (modules[oldMod].members.size() > 1 && emptyModules.size() > 0) {
+			int emptyTarget = emptyModules.back();
+			outFlowToMod[emptyTarget] = 0.0;
+			inFlowFromMod[emptyTarget] = 0.0;
+			nModLinks++;
+		}
+
+		//vector<MoveSummary> moveResults(nModLinks);
+		MoveSummary currentResult;
+		MoveSummary bestResult;
+
+
+
+		double newExitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
+
+		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
+
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			double outFlowToNewMod = it->second;
+			double inFlowFromNewMod = inFlowFromMod[newMod];
+
+			if (newMod != oldMod) {
+				// copy module specific values...
+				double oldExitPr2 = modules[newMod].ExitPr();
+				double oldSumPr2 = modules[newMod].SumPr();
+				
+				// Calculate status of current investigated movement of the node nd.
+				currentResult.newModule = newMod;
+				currentResult.sumPr1 = oldSumPr1 - ndSize;	// This should be 0.0, because oldModule will be empty module.
+				currentResult.sumPr2 = oldSumPr2 + ndSize;
+				currentResult.exitPr1 = newExitPr1;
+				currentResult.exitPr2 = oldExitPr2 + nd.ExitPr() - outFlowToNewMod - inFlowFromNewMod;
+
+				currentResult.newSumExitPr = sumAllExitPr + newExitPr1 + currentResult.exitPr2 - oldExitPr1 - oldExitPr2;
+
+				// Calculate delta_L(M) = L(M)_new - L(M)_old
+				double delta_allExit_log_allExit = pLogP(currentResult.newSumExitPr) - pLogP(sumAllExitPr);
+				double delta_exit_log_exit = pLogP(currentResult.exitPr1) + pLogP(currentResult.exitPr2) - pLogP(oldExitPr1) - pLogP(oldExitPr2);
+				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
+											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
+
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
+				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
+
+				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
+					// we need to update bestResult with currentResult.
+					bestResult.diffCodeLen = currentResult.diffCodeLen;
+					bestResult.newModule = currentResult.newModule;
+					bestResult.sumPr1 = currentResult.sumPr1;
+					bestResult.sumPr2 = currentResult.sumPr2;
+					bestResult.exitPr1 = currentResult.exitPr1;
+					bestResult.exitPr2 = currentResult.exitPr2;
+					bestResult.newSumExitPr = currentResult.newSumExitPr;
+				}
+			}
+		}
+
+
+
+		// Make best possible move for the current node nd.
+		if (bestResult.diffCodeLen < 0.0) {
+			// update related to newMod...
+			int newMod = bestResult.newModule;
+
+			if (modules[newMod].NumMembers() == 0) {
+				newMod = emptyModules.back();
+				emptyModules.pop_back();
+				nEmptyMod--;
+				nModule++;
+			}
+			nd.setModIdx(newMod);
+
+			modules[newMod].increaseNumMembers();
+			modules[newMod].setExitPr(bestResult.exitPr2);
+			modules[newMod].setSumPr(bestResult.sumPr2);
+			modules[newMod].setStayPr(bestResult.exitPr2 + bestResult.sumPr2);
+			modules[newMod].addSumTPWeight(ndTPWeight);
+
+			if (nd.IsDangling()) {
+				modules[newMod].addSumDangling(ndSize);
+				modules[oldMod].minusSumDangling(ndSize);
+			}
+
+			// update related to the oldMod...
+			modules[oldMod].decreaseNumMembers();
+			modules[oldMod].setExitPr(bestResult.exitPr1);
+			modules[oldMod].setSumPr(bestResult.sumPr1);
+			modules[oldMod].setStayPr(bestResult.exitPr1 + bestResult.sumPr1);
+			modules[oldMod].minusSumTPWeight(ndTPWeight);
+
+			if (modules[oldMod].NumMembers() == 0) {
+				nEmptyMod++;
+				nModule--;
+				emptyModules.push_back(oldMod);
+			}
+
+			sumAllExitPr = bestResult.newSumExitPr;
+
+			codeLength += bestResult.diffCodeLen;
+			numMoved++;
+		}
+	}
+
+	if (nodes.size() != nModule + nEmptyMod) {
+		cout << "Something wrong!! nodes.size() != nModule + nEmptyMod." << endl;
+	}
+
+	return numMoved;
+}
+
+
+
+
+
+
+/*
+ * This function implements a prioritized version of move() above.
+ *
+ *	return: the number of movements.
+ */
+int Network::prioritize_move(double vThresh) {
+	int nActive = activeNodes.size();
+	int nNextActive = 0;	// This is a counter for the number of active nodes on next iteration.
+
+	// Generate random sequential order of active nodes.
+	vector<int> randomOrder(nActive);
+	for (int i = 0; i < nActive; i++)
+		randomOrder[i] = activeNodes[i];
+
+	for (int i = 0; i < nActive; i++) {
+		int target = R->randInt(nActive - 1);
+
+		// swap numbers between i and target.
+		int tmp = randomOrder[i];
+		randomOrder[i] = randomOrder[target];
+		randomOrder[target] = tmp;
+	}
+
+	int numMoved = 0;
+
+	// Move each node to one of its neighbor modules in random sequential order.
+	for (int i = 0; i < nActive; i++) {
+		Node& nd = nodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
+		int oldMod = nd.ModIdx();
+
+		int nModLinks = 0;	// The number of links to/from between the current node and other modules.
 
 		flowmap outFlowToMod;	// <modID, flow> for outFlow...
 		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
 
+		// count other modules that are connected to the current node.
+		// During this counting, aggregate outFlowNotToOldMod and inFlowFromOldMod values.
 		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
 			int newMod = nodes[linkIt->first].ModIdx();
 
@@ -599,6 +821,7 @@ bool Network::move() {
 		}
 
 
+		//////////////////// THE OPTION TO MOVE TO EMPTY MODULE ////////////////
 		if (modules[oldMod].members.size() > 1 && emptyModules.size() > 0) {
 			int emptyTarget = emptyModules.back();
 			outFlowToMod[emptyTarget] = 0.0;
@@ -615,7 +838,6 @@ bool Network::move() {
 
 		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
 
-		// We don't need to check newMod != oldMod, since all newMod values are not equal to oldMod.
 		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
 			int newMod = it->first;
 			double outFlowToNewMod = it->second;
@@ -641,6 +863,7 @@ bool Network::move() {
 				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
 											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
 
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
 				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
 
 				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
@@ -659,7 +882,8 @@ bool Network::move() {
 
 
 		// Make best possible move for the current node nd.
-		if (bestResult.diffCodeLen < 0.0) {
+		//if (bestResult.diffCodeLen < 0.0) {
+		if (bestResult.diffCodeLen < vThresh) {
 			// update related to newMod...
 			int newMod = bestResult.newModule;
 
@@ -698,30 +922,44 @@ bool Network::move() {
 			sumAllExitPr = bestResult.newSumExitPr;
 
 			codeLength += bestResult.diffCodeLen;
-			movedAny = true;
+			numMoved++;
+
+			// update activeNodes and isActives vectors.
+			// We have to add the following nodes in activeNodes: neighbors, members in oldMod & newMod.
+			for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
+
+			for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
 		}
 	}
 
+	vector<int>().swap(activeNodes);
+	for (int i = 0; i < isActives.size(); i++) {
+		if (isActives[i] == 1) {
+			activeNodes.push_back(i);
+			isActives[i] = 0;	// reset the flag of isActives[i].
+		}
+	}
 
 	if (nodes.size() != nModule + nEmptyMod) {
 		cout << "Something wrong!! nodes.size() != nModule + nEmptyMod." << endl;
 	}
 
-	return movedAny;
+	return numMoved;
 }
 
 
 
+
+
+
+
 /*
- * This function implements the 1) procedure of stochastic_greedy_partition(Network &network) function in OmpRelaxmap.cpp.
- *
- *	1) in random sequential order, each node is moved to its neighbor module that results in the largest gain of the map eq.
- *	   If no move results in a gain of the map equation, the node stays in its original module.
- *
  *	+ This is a parallel implementation of Network::move() function via OpenMP.
  *		We will loose the criteria for simple implementation and it may help to avoid local optima problem.
  */
-bool Network::parallelMove(int numTh, double& tSequential) {
+int Network::parallelMove(int numTh, double& tSequential) {
 
 	struct timeval tStart, tEnd;
 
@@ -741,20 +979,16 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 		randomOrder[target] = tmp;
 	}
 
-	bool movedAny = false;
+	int numMoved = 0;
 
 	omp_set_num_threads(numTh);
-
-	// generate vectors which contains node-movements results from each thread.
-	typedef pair<int, int> moveinfo;	// first = nodeIndex, second = new module index.
-	vector<vector<moveinfo> > movements(numTh);
 
 	const int emptyTarget = nNode + 1;	// This will be an indicator of moving to emptyModule.
 
 	gettimeofday(&tEnd, NULL);
 	tSequential += elapsedTimeInSec(tStart, tEnd);
 
-#pragma omp parallel for
+#pragma omp parallel for 
 	// Move each node to one of its neighbor modules in random sequential order.
 	for (int i = 0; i < nNode; i++) {
 		Node& nd = nodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
@@ -766,6 +1000,7 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 		flowmap outFlowToMod;	// <modID, flow> for outFlow...
 		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
 
+		// count other modules that are connected to the current node.
 		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
 			int newMod = nodes[linkIt->first].ModIdx();
 
@@ -848,9 +1083,8 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 
 		double newExitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
 
-		bestResult.diffCodeLen = 0.0;	// This is the default value. If we can't find diffCodeLen < 0, then don't move the node.
+		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
 
-		// We don't need to check newMod != oldMod, since all newMod values are not equal to oldMod.
 		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
 			int newMod = it->first;
 			double outFlowToNewMod = it->second;
@@ -877,6 +1111,7 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
 											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
 
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
 				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
 
 				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
@@ -899,9 +1134,9 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 			{
 				gettimeofday(&tStart, NULL);
 			
+				// if newMod == emptyTarget, it indicates moves to empty module.
 				if ( (nEmptyMod > 0) && (newMod == emptyTarget) && (modules[oldMod].NumMembers() > 1) ) {
 					newMod = emptyModules.back();
-				
 					isEmptyTarget = true;
 				}
 				else if (newMod == emptyTarget) {
@@ -1051,7 +1286,7 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 					sumAllExitPr = moveResult.newSumExitPr;
 					codeLength += moveResult.diffCodeLen;
 			
-					movedAny = true;
+					numMoved++;	// This is inside of critical section, so no race condition happens.
 				}
 
 				gettimeofday(&tEnd, NULL);
@@ -1068,7 +1303,385 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 		cout << "Something wrong!! nodes.size() != nModule + nEmptyMod." << endl;
 	}
 
-	return movedAny;
+	return numMoved;
+}
+
+
+
+
+
+/*
+ *	+ This is a parallel implementation of Network::prioritize_move() function via OpenMP.
+ *		We will loose the criteria for simple implementation and it may help to avoid local optima problem.
+ */
+int Network::prioritize_parallelMove(int numTh, double& tSequential, double vThresh) {
+
+	struct timeval tStart, tEnd;
+
+	gettimeofday(&tStart, NULL);
+	
+	int nActive = activeNodes.size();
+	int nNextActive = 0;
+
+	// Generate random sequential order of nodes.
+	vector<int> randomOrder(nActive);
+	for (int i = 0; i < nActive; i++)
+		randomOrder[i] = activeNodes[i];
+
+	for (int i = 0; i < nActive; i++) {
+		int target = R->randInt(nActive - 1);
+
+		// swap numbers between i and target.
+		int tmp = randomOrder[i];
+		randomOrder[i] = randomOrder[target];
+		randomOrder[target] = tmp;
+	}
+
+	// Now randomOrder vector already had all activeNodes info,
+	// so we can reset activeNodes vector for adding for new active nodes.
+	vector<int>().swap(activeNodes);
+
+	int numMoved = 0;
+
+	omp_set_num_threads(numTh);
+
+	const int emptyTarget = nNode + 1;	// This will be an indicator of moving to emptyModule.
+
+	gettimeofday(&tEnd, NULL);
+	tSequential += elapsedTimeInSec(tStart, tEnd);
+
+#pragma omp parallel for 
+	// Move each node to one of its neighbor modules in random sequential order.
+	for (int i = 0; i < nActive; i++) {
+		Node& nd = nodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
+		int oldMod = nd.ModIdx();
+
+		int nModLinks = 0;	// The number of links to/from between the current node and other modules.
+
+
+		flowmap outFlowToMod;	// <modID, flow> for outFlow...
+		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
+
+		// count other modules that are connected to the current node.
+		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+			int newMod = nodes[linkIt->first].ModIdx();
+
+			if (outFlowToMod.count(newMod) > 0) {
+				outFlowToMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = beta * linkIt->second;	// initialization of the outFlow of the current newMod.
+				inFlowFromMod[newMod] = 0.0;
+				nModLinks++;
+			}
+		}
+
+		for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+			int newMod = nodes[linkIt->first].ModIdx();
+
+			if (inFlowFromMod.count(newMod) > 0) {
+				inFlowFromMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = 0.0;
+				inFlowFromMod[newMod] = beta * linkIt->second;
+				nModLinks++;
+			}
+		}
+
+		if (nModLinks != outFlowToMod.size())
+			cout << "ALERT: nModLinks != outFlowToMod.size() in Network::move()." << endl;
+
+
+		// copy node specific values for easy use and efficiency.
+		double ndSize = nd.Size();					// p_nd.
+		double ndTPWeight = nd.TeleportWeight();		// tau_nd.
+		double ndDanglingSize = nd.DanglingSize();
+
+		// Below values are related current module information, but it could be changed in the middle of this decision process.
+		// However, we used this snapshot for finding next module of current node.
+		// These will be a guideline of decision process and the correct values will be calculated at the end of this iteration.
+		double oldExitPr1 = modules[oldMod].ExitPr();
+		double oldSumPr1 = modules[oldMod].SumPr();
+		double oldSumDangling1 = modules[oldMod].SumDangling();
+		double oldModTPWeight = modules[oldMod].SumTPWeight();
+		
+		double additionalTeleportOutFlow = (alpha * ndSize + beta * ndDanglingSize) * (oldModTPWeight - ndTPWeight);
+		double additionalTeleportInFlow = (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
+
+		// For teleportation and danling nodes.
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			if (newMod == oldMod) {
+				outFlowToMod[newMod] += additionalTeleportOutFlow;
+				inFlowFromMod[newMod] += additionalTeleportInFlow;
+			}
+			else {
+				outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].SumTPWeight();
+				inFlowFromMod[newMod] += (alpha * modules[newMod].SumPr() + beta * modules[newMod].SumDangling()) * ndTPWeight;
+			}
+		}
+
+		// Calculate flow to/from own module (default value if no links to own module).
+		double outFlowToOldMod = additionalTeleportOutFlow;
+		double inFlowFromOldMod = additionalTeleportInFlow;
+		if (outFlowToMod.count(oldMod) > 0) {
+			outFlowToOldMod = outFlowToMod[oldMod];
+			inFlowFromOldMod = inFlowFromMod[oldMod];
+		}
+
+
+		//////////////////// THE OPTION TO MOVE TO EMPTY MODULE ////////////////
+		if (modules[oldMod].members.size() > 1 && emptyModules.size() > 0) {
+			outFlowToMod[emptyTarget] = 0.0;
+			inFlowFromMod[emptyTarget] = 0.0;
+			nModLinks++;
+		}
+
+		MoveSummary currentResult;
+		MoveSummary bestResult;
+
+
+
+		double newExitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
+
+		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
+
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			double outFlowToNewMod = it->second;
+			double inFlowFromNewMod = inFlowFromMod[newMod];
+
+			if (newMod != oldMod) {
+
+				// copy module specific values...
+				double oldExitPr2 = modules[newMod].ExitPr();
+				double oldSumPr2 = modules[newMod].SumPr();
+				
+				// Calculate status of current investigated movement of the node nd.
+				currentResult.newModule = newMod;
+				currentResult.sumPr1 = oldSumPr1 - ndSize;	// This should be 0.0, because oldModule will be empty module.
+				currentResult.sumPr2 = oldSumPr2 + ndSize;
+				currentResult.exitPr1 = newExitPr1;
+				currentResult.exitPr2 = oldExitPr2 + nd.ExitPr() - outFlowToNewMod - inFlowFromNewMod;
+
+				currentResult.newSumExitPr = sumAllExitPr + newExitPr1 + currentResult.exitPr2 - oldExitPr1 - oldExitPr2;
+
+				// Calculate delta_L(M) = L(M)_new - L(M)_old
+				double delta_allExit_log_allExit = pLogP(currentResult.newSumExitPr) - pLogP(sumAllExitPr);
+				double delta_exit_log_exit = pLogP(currentResult.exitPr1) + pLogP(currentResult.exitPr2) - pLogP(oldExitPr1) - pLogP(oldExitPr2);
+				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
+											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
+
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
+				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
+
+				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
+					// we need to update bestResult with currentResult.
+					bestResult.diffCodeLen = currentResult.diffCodeLen;
+					bestResult.newModule = currentResult.newModule;
+				}
+			}
+		}
+
+		// store the best possilbe movement information if necessary.
+		// In this version, we are trying to move as soon as possible, i.e. right after decision making...
+		//if (bestResult.diffCodeLen < 0.0) {
+		if (bestResult.diffCodeLen < vThresh) {
+			
+			bool isEmptyTarget = false;
+			bool validMove = true;		// This will indicate the validity of the decided movement.
+			int newMod = bestResult.newModule;
+
+			#pragma omp critical (moveUpdate)
+			{
+				gettimeofday(&tStart, NULL);
+			
+				// if newMod == emptyTarget, it indicates moves to empty module.
+				if ( (nEmptyMod > 0) && (newMod == emptyTarget) && (modules[oldMod].NumMembers() > 1) ) {
+					newMod = emptyModules.back();
+					isEmptyTarget = true;
+				}
+				else if (newMod == emptyTarget) {
+					validMove = false;
+				}
+				else if (modules[newMod].NumMembers() == 0) {
+					// This is the case that the algorithm thought there are some nodes in the new module since newMod != emptyTarget,
+					// but the nodes are all moved to other modules so there are no nodes in there. 
+					// Thus, we don't know whether generating a new module will be better or not.
+					// Therefore, don't move this option.
+					//continue;
+					validMove = false;
+				}
+
+
+				MoveSummary moveResult;
+
+				if (validMove) {
+
+					////////////////////////////////////////////////////////////////////
+					/// THIS IS THE PART FOR EXAMINING QUALITY IMPROVEMENT OR NOT... ///
+					////////////////////////////////////////////////////////////////////
+
+					outFlowToOldMod = 0.0;
+					double outFlowToNewMod = 0.0;
+					inFlowFromOldMod = 0.0;
+					double inFlowFromNewMod = 0.0;
+
+					if (!isEmptyTarget) {
+						for (link_iterator linkIt =nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+							int toMod = nodes[linkIt->first].ModIdx();
+	
+							if (toMod == oldMod) {
+								outFlowToOldMod += beta * linkIt->second;
+							}
+							else if (toMod == newMod) {
+								outFlowToNewMod += beta * linkIt->second;
+							}
+						}
+
+						for (link_iterator linkIt =nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+							int fromMod = nodes[linkIt->first].ModIdx();
+	
+							if (fromMod == oldMod) {
+								inFlowFromOldMod += beta * linkIt->second;
+							}
+							else if (fromMod == newMod) {
+								inFlowFromNewMod += beta * linkIt->second;
+							}
+						}
+					}
+					else {
+						for (link_iterator linkIt =nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+							int toMod = nodes[linkIt->first].ModIdx();
+							if (toMod == oldMod) {
+								outFlowToOldMod += beta * linkIt->second;
+							}
+						}
+
+						for (link_iterator linkIt =nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+							int fromMod = nodes[linkIt->first].ModIdx();
+							if (fromMod == oldMod) {
+								inFlowFromOldMod += beta * linkIt->second;
+							}
+						}
+					}
+
+
+					oldExitPr1 = modules[oldMod].ExitPr();
+					oldSumPr1 = modules[oldMod].SumPr();
+					oldSumDangling1 = modules[oldMod].SumDangling();
+					oldModTPWeight = modules[oldMod].SumTPWeight();
+		
+					// For teleportation and danling nodes.
+					outFlowToOldMod += (alpha * ndSize + beta * ndDanglingSize) * (oldModTPWeight - ndTPWeight);
+					inFlowFromOldMod += (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
+					outFlowToNewMod += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].SumTPWeight();
+					inFlowFromNewMod += (alpha * modules[newMod].SumPr() + beta * modules[newMod].SumDangling()) * ndTPWeight;
+
+
+					if (isEmptyTarget) {
+						outFlowToNewMod = 0.0;
+						inFlowFromNewMod = 0.0;
+					}
+
+					moveResult.exitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
+
+
+					// copy module specific values...
+					double oldExitPr2 = modules[newMod].ExitPr();
+					double oldSumPr2 = modules[newMod].SumPr();
+				
+					// Calculate status of current investigated movement of the node nd.
+					moveResult.newModule = newMod;
+					moveResult.sumPr1 = oldSumPr1 - ndSize;	// This should be 0.0, because oldModule will be empty module.
+					moveResult.sumPr2 = oldSumPr2 + ndSize;
+					moveResult.exitPr2 = oldExitPr2 + nd.ExitPr() - outFlowToNewMod - inFlowFromNewMod;
+
+					moveResult.newSumExitPr = sumAllExitPr + moveResult.exitPr1 + moveResult.exitPr2 - oldExitPr1 - oldExitPr2;
+
+					// Calculate delta_L(M) = L(M)_new - L(M)_old
+					double delta_allExit_log_allExit = pLogP(moveResult.newSumExitPr) - pLogP(sumAllExitPr);
+					double delta_exit_log_exit = pLogP(moveResult.exitPr1) + pLogP(moveResult.exitPr2) - pLogP(oldExitPr1) - pLogP(oldExitPr2);
+					double delta_stay_log_stay = pLogP(moveResult.exitPr1 + moveResult.sumPr1) + pLogP(moveResult.exitPr2 + moveResult.sumPr2) \
+												- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
+
+					// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
+					moveResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
+
+					////////////////////////////////////
+					////// THE END OF EXAMINATION //////
+					////////////////////////////////////
+
+					if (isEmptyTarget) {
+						emptyModules.pop_back();
+				
+						nEmptyMod--;
+						nModule++;
+					}
+
+
+					nd.setModIdx(newMod);
+
+					modules[newMod].increaseNumMembers();
+					modules[newMod].setExitPr(moveResult.exitPr2);
+					modules[newMod].setSumPr(moveResult.sumPr2);
+					modules[newMod].setStayPr(moveResult.exitPr2 + moveResult.sumPr2);
+					modules[newMod].addSumTPWeight(ndTPWeight);
+
+					if (nd.IsDangling()) {
+						modules[newMod].addSumDangling(ndDanglingSize);
+						modules[oldMod].minusSumDangling(ndDanglingSize);
+					}
+
+					// update related to the oldMod...
+					modules[oldMod].decreaseNumMembers();
+					modules[oldMod].setExitPr(moveResult.exitPr1);
+					modules[oldMod].setSumPr(moveResult.sumPr1);
+					modules[oldMod].setStayPr(moveResult.exitPr1 + moveResult.sumPr1);
+					modules[oldMod].minusSumTPWeight(ndTPWeight);
+
+					if (modules[oldMod].NumMembers() == 0) {
+						nEmptyMod++;
+						nModule--;
+						emptyModules.push_back(oldMod);
+					}
+
+					sumAllExitPr = moveResult.newSumExitPr;
+					codeLength += moveResult.diffCodeLen;
+			
+					numMoved++;
+				}
+
+				gettimeofday(&tEnd, NULL);
+
+				tSequential += elapsedTimeInSec(tStart, tEnd);
+			}	// END critical
+
+			// update activeNodes and isActives vectors.
+			// We have to add the following nodes in activeNodes: neighbors, members in oldMod & newMod.
+			// This can be done in parallel without any locking, since the written value is always same.
+			for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
+
+			for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
+		}
+
+	}	// END parallel for
+
+	for (int i = 0; i < isActives.size(); i++) {
+		if (isActives[i] == 1) {
+			activeNodes.push_back(i);
+			isActives[i] = 0;	// reset the flag of isActives[i].
+		}
+	}
+
+	if (nodes.size() != nModule + nEmptyMod) {
+		cout << "Something wrong!! nodes.size() != nModule + nEmptyMod." << endl;
+	}
+
+	return numMoved;
 }
 
 
@@ -1076,8 +1689,11 @@ bool Network::parallelMove(int numTh, double& tSequential) {
 
 
 
+/*
+ *	same as Network::move() except that the moving unit is SuperNode.
+ */
 
-bool Network::moveSuperNodes() {
+int Network::moveSuperNodes() {
 
 	int nSuperNodes = superNodes.size();
 
@@ -1095,19 +1711,19 @@ bool Network::moveSuperNodes() {
 		randomOrder[target] = tmp;
 	}
 
-	bool movedAny = false;
+	int numMoved = 0;
 
 	// Move each node to one of its neighbor modules in random sequential order.
 	for (int i = 0; i < nSuperNodes; i++) {
 		SuperNode& nd = superNodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
 		int oldMod = nd.ModIdx();
 
-
 		unsigned int nModLinks = 0;	// The number of links to/from between the current node and other modules.
 
 		flowmap outFlowToMod;	// <modID, flow> for outFlow...
 		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
 
+		// count other modules that are connected to the current node.
 		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
 			int newMod = superNodes[linkIt->first].ModIdx();
 
@@ -1136,7 +1752,6 @@ bool Network::moveSuperNodes() {
 
 		if (nModLinks != outFlowToMod.size())
 			cout << "ALERT: nModLinks != outFlowToMod.size()." << endl;
-
 
 		// copy node specific values for easy use and efficiency.
 		double ndSize = nd.Size();					// p_nd.
@@ -1172,6 +1787,7 @@ bool Network::moveSuperNodes() {
 			inFlowFromOldMod = inFlowFromMod[oldMod];
 		}
 
+		//////////////////// TODO: NEED TO IMPLEMENT THE OPTION TO MOVE TO EMPTY MODULE ////////////////
 		if (modules[oldMod].members.size() > ndSize && emptyModules.size() > 0) {
 			int emptyTarget = emptyModules.back();
 			outFlowToMod[emptyTarget] = 0.0;
@@ -1180,14 +1796,14 @@ bool Network::moveSuperNodes() {
 		}
 
 
+		//vector<MoveSummary> moveResults(nModLinks);
 		MoveSummary currentResult;
 		MoveSummary bestResult;
 
 		double newExitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
 
-		bestResult.diffCodeLen = 0.0;	
+		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
 
-		// We don't need to check newMod != oldMod, since all newMod values are not equal to oldMod.
 		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
 			int newMod = it->first;
 			double outFlowToNewMod = it->second;
@@ -1213,6 +1829,7 @@ bool Network::moveSuperNodes() {
 				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
 											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
 
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
 				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
 
 				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
@@ -1277,7 +1894,7 @@ bool Network::moveSuperNodes() {
 			sumAllExitPr = bestResult.newSumExitPr;
 
 			codeLength += bestResult.diffCodeLen;
-			movedAny = true;
+			numMoved += spMembers;	// although we moved a superNode, a superNode is actually a set of nodes.
 		}
 	}
 
@@ -1286,35 +1903,25 @@ bool Network::moveSuperNodes() {
 		cout << "Something wrong!! nodes.size() != nModule + nEmptyMod." << endl;
 	}
 
-	return movedAny;
+	return numMoved;
 }
 
 
-
-
 /*
- * This function implements the 1) procedure of stochastic_greedy_partition(Network &network) function in OmpInfomap.cpp.
- *
- *	1) in random sequential order, each node is moved to its neighbor module that results in the largest gain of the map eq.
- *	   If no move results in a gain of the map equation, the node stays in its original module.
+ * This function implements a prioritized version of Network::moveSuperNodes() above.
  */
 
-bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
-
-	struct timeval tStart, tEnd;
-
-	gettimeofday(&tStart, NULL);
-
-	int nSuperNodes = superNodes.size();
-
+int Network::prioritize_moveSPnodes(double vThresh) {
+	int nActive = activeNodes.size();
+	int nNextActive = 0;
 
 	// Generate random sequential order of nodes.
-	vector<int> randomOrder(nSuperNodes);	
-	for (int i = 0; i < nSuperNodes; i++)
-		randomOrder[i] = i;
+	vector<int> randomOrder(nActive);	
+	for (int i = 0; i < nActive; i++)
+		randomOrder[i] = activeNodes[i];
 
-	for (int i = 0; i < nSuperNodes; i++) {
-		int target = R->randInt(nSuperNodes - 1);
+	for (int i = 0; i < nActive; i++) {
+		int target = R->randInt(nActive - 1);
 
 		// swap numbers between i and target.
 		int tmp = randomOrder[i];
@@ -1322,23 +1929,10 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 		randomOrder[target] = tmp;
 	}
 
-	bool movedAny = false;
+	int numMoved = 0;
 
-	omp_set_num_threads(numTh);
-
-	// generate vectors which contains node-movements results from each thread.
-	typedef pair<int, int> moveinfo;	// first = nodeIndex, second = new module index.
-	vector<vector<moveinfo> > movements(numTh);
-
-	const int emptyTarget = nNode + 1;	// This will be an indicator of moving to emptyModule.
-
-	gettimeofday(&tEnd, NULL);
-
-	tSequential += elapsedTimeInSec(tStart, tEnd);
-
-#pragma omp parallel for
 	// Move each node to one of its neighbor modules in random sequential order.
-	for (int i = 0; i < nSuperNodes; i++) {
+	for (int i = 0; i < nActive; i++) {
 		SuperNode& nd = superNodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
 		int oldMod = nd.ModIdx();
 
@@ -1347,6 +1941,7 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 		flowmap outFlowToMod;	// <modID, flow> for outFlow...
 		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
 
+		// count other modules that are connected to the current node.
 		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
 			int newMod = superNodes[linkIt->first].ModIdx();
 
@@ -1410,6 +2005,261 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 			inFlowFromOldMod = inFlowFromMod[oldMod];
 		}
 
+		//////////////////// TODO: NEED TO IMPLEMENT THE OPTION TO MOVE TO EMPTY MODULE ////////////////
+		if (modules[oldMod].members.size() > ndSize && emptyModules.size() > 0) {
+			int emptyTarget = emptyModules.back();
+			outFlowToMod[emptyTarget] = 0.0;
+			inFlowFromMod[emptyTarget] = 0.0;
+			nModLinks++;
+		}
+
+
+		MoveSummary currentResult;
+		MoveSummary bestResult;
+
+		double newExitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
+
+		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
+
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			double outFlowToNewMod = it->second;
+			double inFlowFromNewMod = inFlowFromMod[newMod];
+
+			if (newMod != oldMod) {
+				// copy module specific values...
+				double oldExitPr2 = modules[newMod].ExitPr();
+				double oldSumPr2 = modules[newMod].SumPr();
+				
+				// Calculate status of current investigated movement of the node nd.
+				currentResult.newModule = newMod;
+				currentResult.sumPr1 = oldSumPr1 - ndSize;	// This should be 0.0, because oldModule will be empty module.
+				currentResult.sumPr2 = oldSumPr2 + ndSize;
+				currentResult.exitPr1 = newExitPr1;
+				currentResult.exitPr2 = oldExitPr2 + nd.ExitPr() - outFlowToNewMod - inFlowFromNewMod;
+
+				currentResult.newSumExitPr = sumAllExitPr + newExitPr1 + currentResult.exitPr2 - oldExitPr1 - oldExitPr2;
+
+				// Calculate delta_L(M) = L(M)_new - L(M)_old
+				double delta_allExit_log_allExit = pLogP(currentResult.newSumExitPr) - pLogP(sumAllExitPr);
+				double delta_exit_log_exit = pLogP(currentResult.exitPr1) + pLogP(currentResult.exitPr2) - pLogP(oldExitPr1) - pLogP(oldExitPr2);
+				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
+											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
+
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
+				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
+
+				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
+					// we need to update bestResult with currentResult.
+					bestResult.diffCodeLen = currentResult.diffCodeLen;
+					bestResult.newModule = currentResult.newModule;
+					bestResult.sumPr1 = currentResult.sumPr1;
+					bestResult.sumPr2 = currentResult.sumPr2;
+					bestResult.exitPr1 = currentResult.exitPr1;
+					bestResult.exitPr2 = currentResult.exitPr2;
+					bestResult.newSumExitPr = currentResult.newSumExitPr;
+				}
+			}
+		}
+
+
+		// Make best possible move for the current node nd.
+		//if (bestResult.diffCodeLen < 0.0) {
+		if (bestResult.diffCodeLen < vThresh) {
+			// update related to newMod...
+			int newMod = bestResult.newModule;
+			int spMembers = nd.members.size();
+
+			if (modules[newMod].NumMembers() == 0) {
+				newMod = emptyModules.back();
+				emptyModules.pop_back();
+				nEmptyMod--;
+				nModule++;
+			}
+
+			nd.setModIdx(newMod);
+
+			for (int j = 0; j < spMembers; j++) {
+				nd.members[j]->setModIdx(newMod);
+			}
+
+			modules[newMod].increaseNumMembers(spMembers);
+			modules[newMod].setExitPr(bestResult.exitPr2);
+			modules[newMod].setSumPr(bestResult.sumPr2);
+			modules[newMod].setStayPr(bestResult.exitPr2 + bestResult.sumPr2);
+			modules[newMod].addSumTPWeight(ndTPWeight);
+
+			double spDanglingSize = nd.DanglingSize();
+			if (spDanglingSize > 0.0) {
+				modules[newMod].addSumDangling(spDanglingSize);
+				modules[oldMod].minusSumDangling(spDanglingSize);
+			}
+
+			// update related to the oldMod...
+			modules[oldMod].decreaseNumMembers(spMembers);
+			modules[oldMod].setExitPr(bestResult.exitPr1);
+			modules[oldMod].setSumPr(bestResult.sumPr1);
+			modules[oldMod].setStayPr(bestResult.exitPr1 + bestResult.sumPr1);
+			modules[oldMod].minusSumTPWeight(ndTPWeight);
+
+
+			if (modules[oldMod].NumMembers() == 0) {
+				nEmptyMod++;
+				nModule--;
+				emptyModules.push_back(oldMod);
+			}
+
+			sumAllExitPr = bestResult.newSumExitPr;
+
+			codeLength += bestResult.diffCodeLen;
+			numMoved += spMembers;
+
+			// update activeNodes and isActives vectors.
+			// We have to add the following nodes in activeNodes: neighbors, members in oldMod & newMod.
+			for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
+
+			for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
+		}
+	}
+
+	vector<int>().swap(activeNodes);
+	for (int i = 0; i < isActives.size(); i++) {
+		if (isActives[i] == 1) {
+			activeNodes.push_back(i);
+			isActives[i] = 0;	// reset the flag of isActives[i].
+		}
+	}
+
+	// the following should be true: modules.size() == nModule.
+	if (nodes.size() != nModule + nEmptyMod) {
+		cout << "Something wrong!! nodes.size() != nModule + nEmptyMod." << endl;
+	}
+
+	return numMoved;
+}
+
+
+
+
+
+
+
+/*
+ *	+ This is a parallel implementation of Network::moveSuperNodes() function via OpenMP.
+ *		We will loose the criteria for simple implementation and it may help to avoid local optima problem.
+ */
+
+int Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
+
+	struct timeval tStart, tEnd;
+
+	gettimeofday(&tStart, NULL);
+
+	int nSuperNodes = superNodes.size();
+
+	// Generate random sequential order of nodes.
+	vector<int> randomOrder(nSuperNodes);	
+	for (int i = 0; i < nSuperNodes; i++)
+		randomOrder[i] = i;
+
+	for (int i = 0; i < nSuperNodes; i++) {
+		int target = R->randInt(nSuperNodes - 1);
+
+		// swap numbers between i and target.
+		int tmp = randomOrder[i];
+		randomOrder[i] = randomOrder[target];
+		randomOrder[target] = tmp;
+	}
+
+	int numMoved = 0;
+
+	omp_set_num_threads(numTh);
+
+	const int emptyTarget = nNode + 1;	// This will be an indicator of moving to emptyModule.
+
+	gettimeofday(&tEnd, NULL);
+
+	tSequential += elapsedTimeInSec(tStart, tEnd);
+
+#pragma omp parallel for
+	// Move each node to one of its neighbor modules in random sequential order.
+	for (int i = 0; i < nSuperNodes; i++) {
+		SuperNode& nd = superNodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
+		int oldMod = nd.ModIdx();
+
+		unsigned int nModLinks = 0;	// The number of links to/from between the current node and other modules.
+
+		flowmap outFlowToMod;	// <modID, flow> for outFlow...
+		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
+
+		// count other modules that are connected to the current node.
+		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+			int newMod = superNodes[linkIt->first].ModIdx();
+
+			if (outFlowToMod.count(newMod) > 0) {
+				outFlowToMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = beta * linkIt->second;	// initialization of the outFlow of the current newMod.
+				inFlowFromMod[newMod] = 0.0;
+				nModLinks++;
+			}
+		}
+
+		for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+			int newMod = superNodes[linkIt->first].ModIdx();
+
+			if (inFlowFromMod.count(newMod) > 0) {
+				inFlowFromMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = 0.0;
+				inFlowFromMod[newMod] = beta * linkIt->second;
+				nModLinks++;
+			}
+		}
+
+		if (nModLinks != outFlowToMod.size())
+			cout << "ALERT: nModLinks != outFlowToMod.size()." << endl;
+
+
+		// copy node specific values for easy use and efficiency.
+		double ndSize = nd.Size();					// p_nd.
+		double ndTPWeight = nd.TeleportWeight();		// tau_nd.
+		double ndDanglingSize = nd.DanglingSize();
+
+		double oldExitPr1 = modules[oldMod].ExitPr();
+		double oldSumPr1 = modules[oldMod].SumPr();
+		double oldSumDangling1 = modules[oldMod].SumDangling();
+		double oldModTPWeight = modules[oldMod].SumTPWeight();
+		
+		double additionalTeleportOutFlow = (alpha * ndSize + beta * ndDanglingSize) * (oldModTPWeight - ndTPWeight);
+		double additionalTeleportInFlow = (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
+
+		// For teleportation and danling nodes.
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			if (newMod == oldMod) {
+				outFlowToMod[newMod] += additionalTeleportOutFlow;
+				inFlowFromMod[newMod] += additionalTeleportInFlow;
+			}
+			else {
+				outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].SumTPWeight();
+				inFlowFromMod[newMod] += (alpha * modules[newMod].SumPr() + beta * modules[newMod].SumDangling()) * ndTPWeight;
+			}
+		}
+
+		// Calculate flow to/from own module (default value if no links to own module).
+		double outFlowToOldMod = additionalTeleportOutFlow;
+		double inFlowFromOldMod = additionalTeleportInFlow;
+		if (outFlowToMod.count(oldMod) > 0) {
+			outFlowToOldMod = outFlowToMod[oldMod];
+			inFlowFromOldMod = inFlowFromMod[oldMod];
+		}
+
+		//////////////////// TODO: NEED TO IMPLEMENT THE OPTION TO MOVE TO EMPTY MODULE ////////////////
 		if (modules[oldMod].SumPr() > ndSize && emptyModules.size() > 0) {
 			outFlowToMod[emptyTarget] = 0.0;
 			inFlowFromMod[emptyTarget] = 0.0;
@@ -1424,7 +2274,6 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 
 		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
 
-		// We don't need to check newMod != oldMod, since all newMod values are not equal to oldMod.
 		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
 			int newMod = it->first;
 			double outFlowToNewMod = it->second;
@@ -1451,6 +2300,7 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
 											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
 
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
 				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
 
 				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
@@ -1583,6 +2433,365 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 					double delta_stay_log_stay = pLogP(moveResult.exitPr1 + moveResult.sumPr1) + pLogP(moveResult.exitPr2 + moveResult.sumPr2) \
 												- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
 
+					// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
+					moveResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
+
+					////////////////////////////////////
+					////// THE END OF EXAMINATION //////
+					////////////////////////////////////
+
+
+					if (isEmptyTarget) {
+						emptyModules.pop_back();
+				
+						nEmptyMod--;
+						nModule++;
+					}
+
+
+					nd.setModIdx(newMod);
+					for (int k = 0; k < spMembers; k++) {
+						nd.members[k]->setModIdx(newMod);
+					}
+
+					modules[newMod].increaseNumMembers(spMembers);
+					modules[newMod].setExitPr(moveResult.exitPr2);
+					modules[newMod].setSumPr(moveResult.sumPr2);
+					modules[newMod].setStayPr(moveResult.exitPr2 + moveResult.sumPr2);
+					modules[newMod].addSumTPWeight(ndTPWeight);
+
+					if (ndDanglingSize > 0.0) {
+						modules[newMod].addSumDangling(ndDanglingSize);
+						modules[oldMod].minusSumDangling(ndDanglingSize);
+					}
+
+					// update related to the oldMod...
+					modules[oldMod].decreaseNumMembers(spMembers);
+					modules[oldMod].setExitPr(moveResult.exitPr1);
+					modules[oldMod].setSumPr(moveResult.sumPr1);
+					modules[oldMod].setStayPr(moveResult.exitPr1 + moveResult.sumPr1);
+					modules[oldMod].minusSumTPWeight(ndTPWeight);
+
+					if (modules[oldMod].NumMembers() == 0) {
+						nEmptyMod++;
+						nModule--;
+						emptyModules.push_back(oldMod);
+					}
+
+					sumAllExitPr = moveResult.newSumExitPr;
+					codeLength += moveResult.diffCodeLen;
+			
+					numMoved += spMembers;
+				}
+
+				gettimeofday(&tEnd, NULL);
+
+				tSequential += elapsedTimeInSec(tStart, tEnd);
+			}	// END critical
+
+		}
+
+	}	// END parallel for
+
+	return numMoved;
+}
+
+
+
+/*
+ *	+ This is a parallel implementation of Network::prioritize_moveSPnodes() function via OpenMP.
+ *		We will loose the criteria for simple implementation and it may help to avoid local optima problem.
+ */
+
+int Network::prioritize_parallelMoveSPnodes(int numTh, double& tSequential, double vThresh) {
+
+	struct timeval tStart, tEnd;
+
+	gettimeofday(&tStart, NULL);
+
+	int nActive = activeNodes.size();
+	int nNextActive = 0;
+
+	// Generate random sequential order of nodes.
+	vector<int> randomOrder(nActive);	
+	for (int i = 0; i < nActive; i++)
+		randomOrder[i] = activeNodes[i];
+
+	for (int i = 0; i < nActive; i++) {
+		int target = R->randInt(nActive - 1);
+
+		// swap numbers between i and target.
+		int tmp = randomOrder[i];
+		randomOrder[i] = randomOrder[target];
+		randomOrder[target] = tmp;
+	}
+
+	// Now randomOrder vector already had all activeNodes info,
+	// so we can reset activeNodes vector for adding for new active nodes.
+	vector<int>().swap(activeNodes);
+
+	int numMoved = 0;
+
+	omp_set_num_threads(numTh);
+
+	const int emptyTarget = nNode + 1;	// This will be an indicator of moving to emptyModule.
+
+	gettimeofday(&tEnd, NULL);
+
+	tSequential += elapsedTimeInSec(tStart, tEnd);
+
+#pragma omp parallel for
+	// Move each node to one of its neighbor modules in random sequential order.
+	for (int i = 0; i < nActive; i++) {
+		SuperNode& nd = superNodes[randomOrder[i]];		// look at i_th Node of the random sequential order.
+		int oldMod = nd.ModIdx();
+
+		unsigned int nModLinks = 0;	// The number of links to/from between the current node and other modules.
+
+		flowmap outFlowToMod;	// <modID, flow> for outFlow...
+		flowmap inFlowFromMod;		// <modID, flow> for inFlow...
+
+		// count other modules that are connected to the current node.
+		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+			int newMod = superNodes[linkIt->first].ModIdx();
+
+			if (outFlowToMod.count(newMod) > 0) {
+				outFlowToMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = beta * linkIt->second;	// initialization of the outFlow of the current newMod.
+				inFlowFromMod[newMod] = 0.0;
+				nModLinks++;
+			}
+		}
+
+		for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+			int newMod = superNodes[linkIt->first].ModIdx();
+
+			if (inFlowFromMod.count(newMod) > 0) {
+				inFlowFromMod[newMod] += beta * linkIt->second;
+			}
+			else {
+				outFlowToMod[newMod] = 0.0;
+				inFlowFromMod[newMod] = beta * linkIt->second;
+				nModLinks++;
+			}
+		}
+
+		if (nModLinks != outFlowToMod.size())
+			cout << "ALERT: nModLinks != outFlowToMod.size()." << endl;
+
+
+		// copy node specific values for easy use and efficiency.
+		double ndSize = nd.Size();					// p_nd.
+		double ndTPWeight = nd.TeleportWeight();		// tau_nd.
+		double ndDanglingSize = nd.DanglingSize();
+
+		double oldExitPr1 = modules[oldMod].ExitPr();
+		double oldSumPr1 = modules[oldMod].SumPr();
+		double oldSumDangling1 = modules[oldMod].SumDangling();
+		double oldModTPWeight = modules[oldMod].SumTPWeight();
+		
+		double additionalTeleportOutFlow = (alpha * ndSize + beta * ndDanglingSize) * (oldModTPWeight - ndTPWeight);
+		double additionalTeleportInFlow = (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
+
+		// For teleportation and danling nodes.
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			if (newMod == oldMod) {
+				outFlowToMod[newMod] += additionalTeleportOutFlow;
+				inFlowFromMod[newMod] += additionalTeleportInFlow;
+			}
+			else {
+				outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].SumTPWeight();
+				inFlowFromMod[newMod] += (alpha * modules[newMod].SumPr() + beta * modules[newMod].SumDangling()) * ndTPWeight;
+			}
+		}
+
+		// Calculate flow to/from own module (default value if no links to own module).
+		double outFlowToOldMod = additionalTeleportOutFlow;
+		double inFlowFromOldMod = additionalTeleportInFlow;
+		if (outFlowToMod.count(oldMod) > 0) {
+			outFlowToOldMod = outFlowToMod[oldMod];
+			inFlowFromOldMod = inFlowFromMod[oldMod];
+		}
+
+		//////////////////// TODO: NEED TO IMPLEMENT THE OPTION TO MOVE TO EMPTY MODULE ////////////////
+		if (modules[oldMod].SumPr() > ndSize && emptyModules.size() > 0) {
+			outFlowToMod[emptyTarget] = 0.0;
+			inFlowFromMod[emptyTarget] = 0.0;
+			nModLinks++;
+		}
+
+
+		MoveSummary currentResult;
+		MoveSummary bestResult;
+
+		double newExitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
+
+		bestResult.diffCodeLen = 0.0;	// This is the default value, if we can't find diffCodeLen < 0, then don't move the node.
+
+		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) {
+			int newMod = it->first;
+			double outFlowToNewMod = it->second;
+			double inFlowFromNewMod = inFlowFromMod[newMod];
+
+			if (newMod != oldMod) {
+
+				// copy module specific values...
+				double oldExitPr2 = modules[newMod].ExitPr();
+				double oldSumPr2 = modules[newMod].SumPr();
+				
+				// Calculate status of current investigated movement of the node nd.
+				currentResult.newModule = newMod;
+				currentResult.sumPr1 = oldSumPr1 - ndSize;	// This should be 0.0, because oldModule will be empty module.
+				currentResult.sumPr2 = oldSumPr2 + ndSize;
+				currentResult.exitPr1 = newExitPr1;
+				currentResult.exitPr2 = oldExitPr2 + nd.ExitPr() - outFlowToNewMod - inFlowFromNewMod;
+
+				currentResult.newSumExitPr = sumAllExitPr + newExitPr1 + currentResult.exitPr2 - oldExitPr1 - oldExitPr2;
+
+				// Calculate delta_L(M) = L(M)_new - L(M)_old
+				double delta_allExit_log_allExit = pLogP(currentResult.newSumExitPr) - pLogP(sumAllExitPr);
+				double delta_exit_log_exit = pLogP(currentResult.exitPr1) + pLogP(currentResult.exitPr2) - pLogP(oldExitPr1) - pLogP(oldExitPr2);
+				double delta_stay_log_stay = pLogP(currentResult.exitPr1 + currentResult.sumPr1) + pLogP(currentResult.exitPr2 + currentResult.sumPr2) \
+											- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
+
+				// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
+				currentResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
+
+				if (currentResult.diffCodeLen < bestResult.diffCodeLen) {
+					// we need to update bestResult with currentResult.
+					bestResult.diffCodeLen = currentResult.diffCodeLen;
+					bestResult.newModule = currentResult.newModule;
+				}
+			}
+
+		}
+
+		// store the best possilbe movement information if necessary.
+		//if (bestResult.diffCodeLen < 0.0) {
+		if (bestResult.diffCodeLen < vThresh) {
+
+			bool isEmptyTarget = false;
+			bool validMove = true;		// This will indicate the validity of the decided movement.
+			int newMod = bestResult.newModule;
+			int spMembers = nd.members.size();
+
+			#pragma omp critical (moveUpdate)
+			{
+				gettimeofday(&tStart, NULL);
+			
+				// if newMod == emptyTarget, it indicates moves to empty module.
+				if ( (nEmptyMod > 0) && (newMod == emptyTarget) && (modules[oldMod].NumMembers() > 1) ) {
+					newMod = emptyModules.back();
+					isEmptyTarget = true;
+				}
+				else if (newMod == emptyTarget) {
+					validMove = false;
+				}
+				else if (modules[newMod].NumMembers() == 0) {
+					// This is the case that the algorithm thought there are some nodes in the new module since newMod != emptyTarget,
+					// but the nodes are all moved to other modules so there are no nodes in there. 
+					// Thus, we don't know whether generating a new module will be better or not.
+					// Therefore, don't move this option.
+					//continue;
+					validMove = false;
+				}
+
+
+				MoveSummary moveResult;
+
+				if (validMove) {
+
+					////////////////////////////////////////////////////////////////////
+					/// THIS IS THE PART FOR EXAMINING QUALITY IMPROVEMENT OR NOT... ///
+					////////////////////////////////////////////////////////////////////
+
+					outFlowToOldMod = 0.0;
+					double outFlowToNewMod = 0.0;
+					inFlowFromOldMod = 0.0;
+					double inFlowFromNewMod = 0.0;
+
+					if (!isEmptyTarget) {
+						for (link_iterator linkIt =nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+							int toMod = superNodes[linkIt->first].ModIdx();
+	
+							if (toMod == oldMod) {
+								outFlowToOldMod += beta * linkIt->second;
+							}
+							else if (toMod == newMod) {
+								outFlowToNewMod += beta * linkIt->second;
+							}
+						}
+
+						for (link_iterator linkIt =nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+							int fromMod = superNodes[linkIt->first].ModIdx();
+	
+							if (fromMod == oldMod) {
+								inFlowFromOldMod += beta * linkIt->second;
+							}
+							else if (fromMod == newMod) {
+								inFlowFromNewMod += beta * linkIt->second;
+							}
+						}
+					}
+					else {
+						for (link_iterator linkIt =nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) {
+							int toMod = superNodes[linkIt->first].ModIdx();
+							if (toMod == oldMod) {
+								outFlowToOldMod += beta * linkIt->second;
+							}
+						}
+
+						for (link_iterator linkIt =nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) {
+							int fromMod = superNodes[linkIt->first].ModIdx();
+							if (fromMod == oldMod) {
+								inFlowFromOldMod += beta * linkIt->second;
+							}
+						}
+					}
+
+
+					oldExitPr1 = modules[oldMod].ExitPr();
+					oldSumPr1 = modules[oldMod].SumPr();
+					oldSumDangling1 = modules[oldMod].SumDangling();
+					oldModTPWeight = modules[oldMod].SumTPWeight();
+		
+					// For teleportation and danling nodes.
+					outFlowToOldMod += (alpha * ndSize + beta * ndDanglingSize) * (oldModTPWeight - ndTPWeight);
+					inFlowFromOldMod += (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
+					outFlowToNewMod += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].SumTPWeight();
+					inFlowFromNewMod += (alpha * modules[newMod].SumPr() + beta * modules[newMod].SumDangling()) * ndTPWeight;
+
+
+					if (isEmptyTarget) {
+						outFlowToNewMod = 0.0;
+						inFlowFromNewMod = 0.0;
+					}
+
+					moveResult.exitPr1 = oldExitPr1 - nd.ExitPr() + outFlowToOldMod + inFlowFromOldMod;
+
+
+					// copy module specific values...
+					double oldExitPr2 = modules[newMod].ExitPr();
+					double oldSumPr2 = modules[newMod].SumPr();
+				
+					// Calculate status of current investigated movement of the node nd.
+					moveResult.newModule = newMod;
+					moveResult.sumPr1 = oldSumPr1 - ndSize;	// This should be 0.0, because oldModule will be empty module.
+					moveResult.sumPr2 = oldSumPr2 + ndSize;
+					moveResult.exitPr2 = oldExitPr2 + nd.ExitPr() - outFlowToNewMod - inFlowFromNewMod;
+
+					moveResult.newSumExitPr = sumAllExitPr + moveResult.exitPr1 + moveResult.exitPr2 - oldExitPr1 - oldExitPr2;
+
+					// Calculate delta_L(M) = L(M)_new - L(M)_old
+					double delta_allExit_log_allExit = pLogP(moveResult.newSumExitPr) - pLogP(sumAllExitPr);
+					double delta_exit_log_exit = pLogP(moveResult.exitPr1) + pLogP(moveResult.exitPr2) - pLogP(oldExitPr1) - pLogP(oldExitPr2);
+					double delta_stay_log_stay = pLogP(moveResult.exitPr1 + moveResult.sumPr1) + pLogP(moveResult.exitPr2 + moveResult.sumPr2) \
+												- pLogP(oldExitPr1 + oldSumPr1) - pLogP(oldExitPr2 + oldSumPr2);
+
+					// delta_L(M) = delta_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay.
 					moveResult.diffCodeLen = delta_allExit_log_allExit - 2.0 * delta_exit_log_exit + delta_stay_log_stay;
 
 					////////////////////////////////////
@@ -1629,7 +2838,7 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 					sumAllExitPr = moveResult.newSumExitPr;
 					codeLength += moveResult.diffCodeLen;
 			
-					movedAny = true;
+					numMoved += spMembers;
 				}
 
 				gettimeofday(&tEnd, NULL);
@@ -1637,12 +2846,34 @@ bool Network::parallelMoveSuperNodes(int numTh, double& tSequential) {
 				tSequential += elapsedTimeInSec(tStart, tEnd);
 			}	// END critical
 
+			// update activeNodes and isActives vectors.
+			// We have to add the following nodes in activeNodes: neighbors, members in oldMod & newMod.
+			// This can be done in parallel without any locking, since the written value is always same.
+			for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
+
+			for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++)
+				isActives[linkIt->first] = 1;	// set as an active nodes.
 		}
 
 	}	// END parallel for
 
-	return movedAny;
+	for (int i = 0; i < isActives.size(); i++) {
+		if (isActives[i] == 1) {
+			activeNodes.push_back(i);
+			isActives[i] = 0;	// reset the flag of isActives[i].
+		}
+	}
+
+	return numMoved;
 }
+
+
+
+
+
+
+
 
 /**
  *	This function will update members vector in modules correspondingly.
@@ -1660,7 +2891,7 @@ void Network::updateMembersInModule() {
 		vector<Node*>().swap(modules[i].members);
 		//if(modules[i].NumMembers() > 0)
 		//	activeModules.push_back(i);
-		if(modules[i].NumMembers() > 1000)
+		if(modules[i].NumMembers() > 10000)
 			lgActiveMods.push_back(i);
 		else if(modules[i].NumMembers() > 0)
 			smActiveMods.push_back(i);
@@ -1686,6 +2917,7 @@ void Network::updateSPMembersInModule() {
 // calculate exit-probability based on node information and current module assignment.
 void Network::updateCodeLength(int numTh, bool isSPNode) {
 
+	// calculate exit-probability for each module.
 	double tempSumAllExit = 0.0;
 	double exit_log_exit = 0.0;
 	double stay_log_stay = 0.0;
@@ -1761,7 +2993,6 @@ double Network::calculateCodeLength() {
 			tempSumAllExit += exitPr;
 			exit_log_exit += pLogP(exitPr);
 			stay_log_stay += pLogP(exitPr + modules[i].SumPr());
-
 		}
 	}
 
@@ -1790,6 +3021,9 @@ void Network::convertModulesToSuperNodes(int numTh) {
 		}
 	}
 
+	/*
+	 *	Calculate outLinks and inLinks between superNodes...
+	 */
 	int numSPNode = superNodes.size();
 
 	omp_set_num_threads(numTh);
@@ -1845,6 +3079,7 @@ void Network::convertModulesToSuperNodes(int numTh) {
 
 
 
+//void Network::generateSuperNodesFromSubModules() {
 void Network::generateSuperNodesFromSubModules(int numTh) {
 	//initialize superNodes vector for updating w.r.t. the current module status.
 	vector<SuperNode>().swap(superNodes);
@@ -1856,6 +3091,9 @@ void Network::generateSuperNodesFromSubModules(int numTh) {
 		superNodes.push_back(SuperNode(subModules[i], i, *this));
 	}
 
+	/*
+	 *	Calculate outLinks and inLinks between superNodes...
+	 */
 	int numSPNode = superNodes.size();
 
 	typedef map<int, double> EdgeMap;
@@ -1871,6 +3109,7 @@ void Network::generateSuperNodesFromSubModules(int numTh) {
 			EdgeMap newOutLinks;
 
 			for (int j = 0; j < numNodesInSPNode; j++) {
+				// Calculate newOutLinks from a superNode to other superNodes.
 				Node* nd = spNode->members[j];
 				int nOutEdge = nd->outLinks.size();
 
@@ -1907,6 +3146,7 @@ void Network::generateSuperNodesFromSubModules(int numTh) {
 				double exitProb = teleportExitFlow + beta * sumExitFlow;
 				spNode->setExitPr(exitProb);
 			}
+
 		}
 
 	// update inLinks in SEQUENTIAL..
@@ -1916,6 +3156,12 @@ void Network::generateSuperNodesFromSubModules(int numTh) {
 			superNodes[superNodes[i].outLinks[j].first].inLinks.push_back(make_pair(i,superNodes[i].outLinks[j].second));
 	}
 }
+
+
+
+
+
+
 
 
 
