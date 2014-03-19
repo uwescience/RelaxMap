@@ -52,7 +52,17 @@ Released for free under a Creative Commons Attribution 3.0 License
 		  This algorithm relaxes concurrency assumptions to avoid lock overhead,
 		  achieving high parallel efficiency in shared-memory multicore
 		  experiments while exhibiting similar convergence properties and
-		  finding similar community structures as the serial algorithm.</p>
+		  finding similar community structures as the serial algorithm.
+		  </p>
+		  <p>
+		  In addition to parallelization, we have worked on more efficient searching mechanism 
+		  for the flow-based community detection algorithms.
+		  The new searching mechanism examines only subset of vertices, 
+		  which selected based on the neighbors' status change during the previous iteration, 
+		  for finding better outputs in each iteration, called <b>prioritized search</b>.
+		  We achieve more efficient search time, up to about 1.5 times faster, 
+		  for the flow-based community detection without loss of output quality.
+		  </p>
 		  <p>
 		  For the details of the RelaxMap algorithm, please refer to our paper appeared in the Proceedings of 2013 ICDM Workshops.
 		  </p>
@@ -68,7 +78,7 @@ Released for free under a Creative Commons Attribution 3.0 License
 		<div class="article">
 		  <h2>Publications</h2>
 		  <p>Seung-Hee Bae, Daniel Halperin, Jevin West, Martin Rosvall, Bill Howe,
-				"<a href="http://homes.cs.washington.edu/~shbae/papers/relaxMap_camera_ready.pdf" target="_blank"><b>Scalable Flow-Based Community Detection for Large-Scale Network Analysis</b></a>,"
+				"<a href="http://ieeexplore.ieee.org/xpl/articleDetails.jsp?arnumber=6753935" target="_blank"><b>Scalable Flow-Based Community Detection for Large-Scale Network Analysis</b></a>,"
 				in Proceedings of <em>IEEE International Conference on Data Mining Workshops (ICDMW 2013)</em>, Dallas, Texas, Dec. 2013. 
 		  </p>
         </div>
@@ -87,9 +97,9 @@ Released for free under a Creative Commons Attribution 3.0 License
 		  <h3>How to run RelaxMap</h3>
           <p>
 			<code>
-			<b>[Usage]</b>: >./ompRelaxmap [seed] [network data] [# threads] [# attempts] [threshold] [maxIter] [outDir] [adapt/fixed]<br />
+			<b>[Usage]</b>: >./ompRelaxmap [seed] [network data] [# threads] [# attempts] [threshold] [vThresh] [maxIter] [outDir] [prior/normal]<br />
 			<br />
-			<b>example</b>: >./ompRelaxmap 1 data/flow.txt 4 1 1e-3 10 outputs/ fixed
+			<b>example</b>: >./ompRelaxmap 1 data/flow.txt 4 1 1e-3 0.0 10 outputs/ prior
 			</code>
 		  </p>
 
@@ -106,9 +116,10 @@ Released for free under a Creative Commons Attribution 3.0 License
 				args[3]: <i># attempts</i> - the number of attempts.<br />
 				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (this is not applied yet, so it only return with 1 attempt.)<br />
 				args[4]: <i>threshold</i> - the stop condition threshold  (recommended 1e-3 or 1e-4)<br />
-				args[5]: <i>maxIter</i> - the number of maximum iteration for each super-step.<br />
-				args[6]: <i>outDir</i> - the directory where the output files will be located.<br />
-				args[7]: <i>adapt/fixed flag</i> - use either <i>adapt</i> or <i>fixed</i> for threshold option.<br />
+				args[5]: <i>vThresh</i> - the threshold value for each vertex movement (recommended 0.0) <br />
+				args[6]: <i>maxIter</i> - the number of maximum iteration for each super-step.<br />
+				args[7]: <i>outDir</i> - the directory where the output files will be located.<br />
+				args[8]: <i>prior/normal flag</i> - apply the prioritized search for efficient runs (<i>prior</i>) or not (<i>normal</i>).<br />
 			</code>
 		  </p>
 		  <h3>Output Files</h3>
@@ -187,7 +198,7 @@ Released for free under a Creative Commons Attribution 3.0 License
         <div class="article">
           <h2>Contact Us</h2>
           <p>
-			If you have any question or comment with respect to RelaxMap project, please contact us one of the following members:
+			If you have any question or comment with respect to RelaxMap project, please contact us:
 		  </p>
 		  <table>
 			<tr><td><b>Seung-Hee Bae:</b></td><td><img src="images/sh_email.png" class="content" width="200px"></td></tr>
