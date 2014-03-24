@@ -36,7 +36,7 @@ Released for free under a Creative Commons Attribution 3.0 License
   <div class="content">
     <div class="content_resize">
       <div class="mainbar"><div class="submb">
-		<a name="quality"></a>
+		<a name="howto"></a>
         <div class="article">
 		  <h2>How to Generate Experimental Results in Our Publication </h2>
 		  We assume that you already downloaded and compiled the RelaxMap as in <a href="index.html">here</a>.
@@ -96,6 +96,8 @@ Released for free under a Creative Commons Attribution 3.0 License
 			</code>
 		  </p>
 		  <p>
+			The example command shows how to run the prioritized RelaxMap with 4-way parallel execution.
+			If you want to run non-prioritized RelaxMap, you should change the last argument from <i>prior</i> to <i>normal</i>.
 			Note that the elapsed time means time used for overall graph partitioning (printed as "Time for partitioning").
 		  </p>
 
@@ -118,9 +120,11 @@ Released for free under a Creative Commons Attribution 3.0 License
 			The option '<b>-s</b>' is the random seed, so if you want to run multiple times with different random seed 
 			you can use different integers with the option.
 		  </p>
-			
-		  <p></p>
+		</div>	
+		<p></p>
 
+		<a name="quality"></a>
+        <div class="article">
 		  <h2>Some Experimental Results</h2>
 		  <p>
 		  You can check out the details of the experimental results from our <a href="http://ieeexplore.ieee.org/xpl/articleDetails.jsp?arnumber=6753935" target="_blnak">ICDMW 2013 paper</a>.<br />
@@ -128,17 +132,56 @@ Released for free under a Creative Commons Attribution 3.0 License
 		  </p>
 
 		  <h3>Quality Comparison [Benchmark Datasets]</h3>
+
+		  <h4>Calculating normalized mutual information (NMI)</h4>
+		  <p>
+			The normalized mutual information (NMI) is used for comparing two given community structures of the same dataset.
+			If NMI is equal to 1, then the given two community structures are identical, and
+			if NMI is equal to 0, then the given two community structures are totally independent.
+			You can find how to calculate NMI from Section III of <a href="http://journals.aps.org/pre/abstract/10.1103/PhysRevE.80.056117" target="_blank">this paper</a>.
+		  </p>
+		  <p>
+			If you run our algorithm to find a community structure of a benchmark dataset,
+			you can calculate NMI by using a simple perl-script, called <a href="scripts/calculate_normalized_mutual_info.pl" target="_blank">calculate_normalized_mutual_info.pl</a>.
+			If you install our RelaxMap application correctly, you have some bencmark datasets in data/ directory as in .tgz format.
+			You can extract each dataset file as shown "How to get Datasets" section.
+			We assume that you are in the directory of RelaxMap implementation and put the perl script under that directory.
+			Now you can run our algorithm and calculate NMI for the output as below:
+
+			<code>
+				$ ./ompRelaxmap 1 data/directNet_5k_sm_mu_07.txt 4 1 1e-3 0.0 10 outputs/ prior <br />
+				$ ./calculate_normalized_mutual_info.pl -c data/directNet_5k_sm_mu_07_community.dat -f outputs/directNet_5k_sm_mu_07.clu -n 5000 <br />
+			</code>
+		  </p>
+		  <p>
+			Note that the output of the RelaxMap will be stored in "outputs/" directory as we put argument [7], 
+			with the file name as same as data file name with extension .clu (clustering info) and .tree (tree structure info).
+			So, if you want to run multiple times and keep all the outputs of the same dataset separately, then
+			you should move the outputs with different name. Otherwise, only outputs of the last experiment of the dataset will be remained.
+		  </p>
+		  <p>
+			Here, we show an example of how to calculate NMI of an output with a benchmark dataset (directNet_5k_sm_mu_07.txt).
+			For the given perl-script, we should provide the original ground truth community structure (with '-c' option),
+			the clustering output of the algorithm (with '-f' option), and the number of points, here 5000.
+		  </p>
+
+		  <h4>A graph for normalized mutual information of outputs of RelaxMap and Infomap</h4>
 		  <p>
 			<object width="400px" height="300px" data="results/NMI_vs_mixParam_directNet_5k_sm_mu.pdf"></object>
 		  </p>
+
 		  <p>
-			The average normalized mutual information (NMI) as
-			a function of the mixing parameter comparing Infomap and
-			RelaxMap for the <em>directNet-5k</em> synthetic dataset. This implies
-			that the RelaxMap generates outputs that are very similar to
+			The above graph shows the average NMI of 100 outputs as a function of the mixing parameter comparing Infomap and
+			RelaxMap for the <em>directNet-5k</em> benchmark dataset. 
+			Since the ground truth community structure is given for each benchmark dataset,
+			we measured NMI by comparing the outputs of the Infomap and RelaxMap algorithms
+			with the corresponding known ground truth community structures. 
+			This graph implies that the RelaxMap generates outputs that are very similar to
 			the outputs of the Infomap algorithm.
 		  </p>
+
 		  <h3>Quality Comparison [Real-World Datasets]</h3>
+
 		  <p>
 			<object width="400px" height="400px" data="results/avg_min_max_soc-LiveJournal1_opt_mdl_comparison.pdf"></object>
 		  </p>
@@ -150,9 +193,20 @@ Released for free under a Creative Commons Attribution 3.0 License
 		  The output qualities of the RelaxMap-1 and RelaxMap-8 are similar to the output quality of the Infomap. 
 		  </p>
         </div>
+
+
 		<a name="runtime"></a>
         <div class="article">
           <h3>Shared-Memory Parallel Efficiency</h3>
+		  <p>
+			Parallel efficiency is defined as below:
+			<code>
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>efficiency = T<sub>1</sub> / (T<sub>p</sub> * p)</b> <br /><br />
+
+				where <i>T<sub>1</sub></i> = time for sequential run, <i>T<sub>p</sub></i> = time for <i>p-way</i> parallel run, 
+				and <i>p</i> = the number of parallel units.
+			</code>
+		  </p>
 		  <p>
 			<object width="500px" height="500px" data="results/efficiency_vs_nProc_polaris.pdf"></object>
 			<!-- <embed width="400px" height="400px" src="results/efficiency_vs_nProc_polaris.pdf"> -->
@@ -160,7 +214,7 @@ Released for free under a Creative Commons Attribution 3.0 License
 		  <p>
 			Parallel efficiency of the <b>RelaxMap</b> on a 12-core machine,
 			two six-core Intel Xeon E5-2430L processors (2.00 GHz, 15 MB Intel Smart Cache) and 64 GB of main memory, 
-			with 6 real world datasets.
+			with 6 real world datasets. We measure the parallel efficiency based on average times for partitioning of 10 runs.
 		  </p>
         </div>
       </div></div>
