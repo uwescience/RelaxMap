@@ -187,7 +187,11 @@ void load_linkList_format_network(string fName, Network &network) {
 	int nDoubleLinks = 0;
 	double newLinkWeight = 0.0;
 
-	set<int> Nodes;
+	set<long> Nodes;
+
+
+	// generate temporary Edge map with long value for large id graphs..
+	map<pair<long,long>, double> tempEdges;
 
 	// Read links in format "from to [weight]"
 	while (getline(net,line) != NULL) {
@@ -196,10 +200,10 @@ void load_linkList_format_network(string fName, Network &network) {
 			ss.str(line);
 
 			ss >> buf;
-			int linkEnd1 = atoi(buf.c_str());
+			long linkEnd1 = atol(buf.c_str());
 			
 			ss >> buf;
-			int linkEnd2 = atoi(buf.c_str());
+			long linkEnd2 = atol(buf.c_str());
 			
 			buf.clear();
 			ss >> buf;
@@ -213,7 +217,7 @@ void load_linkList_format_network(string fName, Network &network) {
 			Nodes.insert(linkEnd1);
 			Nodes.insert(linkEnd2);
 
-			newLinkWeight = network.Edges[make_pair(linkEnd1, linkEnd2)] += linkWeight;
+			newLinkWeight = tempEdges[make_pair(linkEnd1, linkEnd2)] += linkWeight;
 			if (newLinkWeight > linkWeight)
 				nDoubleLinks++;
 		}
@@ -231,15 +235,15 @@ void load_linkList_format_network(string fName, Network &network) {
 	// Renaming all nodes if necessary...
 	vector<string> nodeNames = vector<string>(Nodes.size());
 
-	int nodeCounter = 0;
-	map<int, int> renumber;
+	long nodeCounter = 0;
+	map<long, long> renumber;
 	bool renum = false;
 
-	for (set<int>::iterator it = Nodes.begin(); it != Nodes.end(); it++) {
+	for (set<long>::iterator it = Nodes.begin(); it != Nodes.end(); it++) {
 		nodeNames[nodeCounter] = to_string((*it));
 		renumber.insert(make_pair((*it), nodeCounter));
 
-		network.nodes[nodeCounter].setID(nodeCounter);
+		network.nodes[nodeCounter].setID( (int) nodeCounter);
 		network.nodes[nodeCounter].setName(nodeNames[nodeCounter]);
 
 		if (nodeCounter != (*it))
@@ -247,13 +251,9 @@ void load_linkList_format_network(string fName, Network &network) {
 		nodeCounter++;
 	}
 
-	if (renum) {
-		map<pair<int, int>, double> newEdges;
-		for (map<pair<int, int>, double>::iterator it = network.Edges.begin(); it != network.Edges.end(); it++)
-			newEdges.insert(make_pair(make_pair(renumber.find(it->first.first)->second, renumber.find(it->first.second)->second), it->second));
+	for (map<pair<long, long>, double>::iterator it = network.Edges.begin(); it != network.Edges.end(); it++)
+		network.Edges.insert(make_pair(make_pair((int)renumber.find(it->first.first)->second, (int)renumber.find(it->first.second)->second), it->second));
 
-		network.Edges.swap(newEdges);
-	}
 
 	cout << "done! (found " << network.NNode() << " nodes and " << network.NEdge() << " edges.)";
 	if(nDoubleLinks > 0)
