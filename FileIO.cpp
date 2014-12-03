@@ -251,7 +251,7 @@ void load_linkList_format_network(string fName, Network &network) {
 		nodeCounter++;
 	}
 
-	for (map<pair<long, long>, double>::iterator it = network.Edges.begin(); it != network.Edges.end(); it++)
+	for (map<pair<long, long>, double>::iterator it = tempEdges.begin(); it != tempEdges.end(); it++)
 		network.Edges.insert(make_pair(make_pair((int)renumber.find(it->first.first)->second, (int)renumber.find(it->first.second)->second), it->second));
 
 
