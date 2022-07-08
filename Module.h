@@ -111,9 +111,9 @@ class Network {
 	double sumAllExitPr;			// SUM (exitPr_i)  i = 1 .. nModule
 
   public:
-	static const double alpha = 0.15;
-	//static const double beta = 1.0 - alpha;
-	static const double beta = 1.0 - 0.15;
+	static constexpr double alpha = 0.15;
+	//static constexpr double beta = 1.0 - alpha;
+	static constexpr double beta = 1.0 - 0.15;
 
 	MTRand *R;
 
