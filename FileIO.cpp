@@ -57,7 +57,7 @@ void load_pajek_format_network(string fName, Network &network) {
 
   istringstream ss;
   while(network.NNode() == 0){ 
-    if(getline(net,line) == NULL){
+    if(!getline(net,line)){
       cout << "the network file is not in Pajek format...exiting" << endl;
       exit(-1);
     }
@@ -137,7 +137,7 @@ void load_pajek_format_network(string fName, Network &network) {
   int NdoubleLinks = 0;
   
   // Read links in format "from to weight", for example "1 3 0.7"
-  while(getline(net,line) != NULL){
+  while(getline(net,line)){
     ss.clear();
     ss.str(line);
     ss >> buf;
@@ -194,7 +194,7 @@ void load_linkList_format_network(string fName, Network &network) {
 	map<pair<long,long>, double> tempEdges;
 
 	// Read links in format "from to [weight]"
-	while (getline(net,line) != NULL) {
+	while (getline(net,line)) {
 		if (line[0] != '#') {
 			ss.clear();
 			ss.str(line);
